@@ -20,7 +20,13 @@ services:
         sync: false              # set to the Neon connection string (dashboard)
       - key: APP_ENCRYPTION_KEY
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: GOOGLE_ADS_DEVELOPER_TOKEN
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false              # 手順6でWebクライアント作成後に設定
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
       - key: GOOGLE_ADS_OAUTH2_CLIENT_ID
         sync: false
