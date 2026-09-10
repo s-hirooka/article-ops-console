@@ -215,13 +215,21 @@ class JobIn(BaseModel):
     params: dict = Field(default_factory=dict)
 
 
-@router.post("/jobs", status_code=202)
+@router.post("/jobs", status_code=201)
 def create_job(
     body: JobIn,
     background: BackgroundTasks,
     session: Session = Depends(db),
     user_id: int = Depends(caller_user_id),
 ) -> dict:
+    """Create a job and run it.
+
+    On Render's free plan BackgroundTasks are unreliable (the instance spins
+    down after 15 min with no traffic, killing pending work, and there is no
+    retry). So jobs run **synchronously** here: the request returns once the
+    job has finished. ``article_generate`` therefore takes ~30-60s; pass
+    ``?async=1`` to fire-and-forget instead (best effort).
+    """
     if body.kind not in jobsvc.VALID_KINDS:
         raise HTTPException(422, f"未知のジョブ種別: {body.kind}")
     if body.domain_id is not None:
@@ -238,9 +246,14 @@ def create_job(
         created_by=user_id,
     )
     job_id = job.id
-    session.commit()  # persist before the background task opens its own session
-    background.add_task(jobsvc.run_job, job_id)
-    return {"job_id": job_id, "status": "queued"}
+    session.commit()  # persist before run_job opens its own session
+
+    if body.params.get("_async"):
+        background.add_task(jobsvc.run_job, job_id)
+        return {"job_id": job_id, "status": "queued"}
+
+    final = jobsvc.run_job(job_id)  # blocks until done; opens its own session
+    return {"job_id": job_id, **final}
 
 
 class PublishIn(BaseModel):

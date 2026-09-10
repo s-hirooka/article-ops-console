@@ -99,7 +99,7 @@ def main() -> int:
 
     # 3. test_prompt job
     r = c.post("/api/jobs", headers=OWNER, json={"kind": "test_prompt", "domain_id": did})
-    check("POST test_prompt job -> 202", r.status_code == 202, r.text)
+    check("POST test_prompt job -> 201", r.status_code == 201, r.text)
     jid = r.json()["job_id"]
     r = c.get(f"/api/jobs/{jid}")
     j = r.json()
@@ -111,7 +111,7 @@ def main() -> int:
     r = c.post("/api/jobs", headers=OWNER, json={
         "kind": "article_generate", "domain_id": did,
         "params": {"target_keyword": "CD 収納", "search_volume": 1600}})
-    check("POST article_generate -> 202", r.status_code == 202, r.text)
+    check("POST article_generate -> 201", r.status_code == 201, r.text)
     jid = r.json()["job_id"]
     j = c.get(f"/api/jobs/{jid}").json()
     check("article job succeeded", j["status"] == "succeeded", str(j))

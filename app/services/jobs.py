@@ -53,17 +53,23 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def run_job(job_id: str) -> None:
+def run_job(job_id: str) -> dict:
+    """Run one job to completion. Returns its final state
+    ``{status, result, error, llm_cost_usd}`` (also persisted on the row)."""
     with SessionLocal() as bootstrap:
         row = bootstrap.get(m.Job, job_id)
         if row is None:
-            return
+            return {"status": "missing", "result": None, "error": "job not found",
+                    "llm_cost_usd": 0.0}
         account_id = row.account_id
 
     with tenant_session(account_id) as s:
         job = s.get(m.Job, job_id)
         if job is None or job.status not in ("queued", "running"):
-            return
+            return {"status": getattr(job, "status", "gone"),
+                    "result": getattr(job, "result_json", None),
+                    "error": getattr(job, "error", None),
+                    "llm_cost_usd": float(getattr(job, "llm_cost_usd", 0) or 0)}
         job.status = "running"
         job.started_at = _now()
         s.flush()
@@ -82,6 +88,13 @@ def run_job(job_id: str) -> None:
             job.error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1500:]}"
         finally:
             job.finished_at = _now()
+
+        return {
+            "status": job.status,
+            "result": job.result_json,
+            "error": job.error,
+            "llm_cost_usd": float(job.llm_cost_usd or 0),
+        }
 
 
 def _dispatch(s: Session, job: m.Job) -> dict:
