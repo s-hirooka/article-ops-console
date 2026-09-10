@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import RankChart from "@/components/RankChart";
 import {
   Card,
@@ -26,9 +27,17 @@ import type {
   Recommendations,
 } from "@/lib/types";
 
-export default function DomainPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const domainId = Number(id);
+export default function DomainPage() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <DomainInner />
+    </Suspense>
+  );
+}
+
+function DomainInner() {
+  const sp = useSearchParams();
+  const domainId = Number(sp.get("id"));
 
   const [d, setD] = useState<DomainDetail | null>(null);
   const [rank, setRank] = useState<RankRow[]>([]);
@@ -39,6 +48,7 @@ export default function DomainPage({ params }: { params: Promise<{ id: string }>
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!domainId) return;
     Promise.all([
       api.domain(domainId),
       api.rankHistory(domainId, 90),
@@ -58,6 +68,7 @@ export default function DomainPage({ params }: { params: Promise<{ id: string }>
       .catch((e) => setErr(e.message));
   }, [domainId]);
 
+  if (!domainId) return <ErrorNote>ドメインが指定されていません。</ErrorNote>;
   if (err) return <ErrorNote>読み込みに失敗しました: {err}</ErrorNote>;
   if (!d) return <Spinner />;
 
@@ -81,10 +92,16 @@ export default function DomainPage({ params }: { params: Promise<{ id: string }>
           <Stat value={d.has_own_anthropic_key ? "専用" : "共有"} label="APIキー" />
         </div>
         <div className="mt-3 flex gap-3 text-[13px]">
-          <Link href={`/domains/${domainId}/new`} className="text-accent hover:underline">
+          <Link
+            href={`/domains/new?id=${domainId}`}
+            className="text-accent hover:underline"
+          >
             ＋ 新規記事を作成
           </Link>
-          <Link href={`/domains/${domainId}/prompts`} className="text-accent hover:underline">
+          <Link
+            href={`/domains/prompts?id=${domainId}`}
+            className="text-accent hover:underline"
+          >
             プロンプトを編集
           </Link>
         </div>
@@ -116,7 +133,7 @@ export default function DomainPage({ params }: { params: Promise<{ id: string }>
                 <Td className="font-mono text-[12px] text-ink2">{o.url}</Td>
                 <Td>
                   <Link
-                    href={`/domains/${domainId}/new?keyword=${encodeURIComponent(o.keyword)}`}
+                    href={`/domains/new?id=${domainId}&keyword=${encodeURIComponent(o.keyword)}`}
                     className="text-[12px] text-accent hover:underline"
                   >
                     この語で作成
@@ -223,7 +240,7 @@ export default function DomainPage({ params }: { params: Promise<{ id: string }>
                 </Td>
                 <Td>
                   <Link
-                    href={`/domains/${domainId}/new?article=${a.id}`}
+                    href={`/domains/new?id=${domainId}&article=${a.id}`}
                     className="text-accent hover:underline"
                   >
                     {a.title || "（無題）"}

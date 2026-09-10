@@ -2,15 +2,24 @@
 
 import Editor from "@monaco-editor/react";
 import Link from "next/link";
-import { use, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Button, Card, ErrorNote, Empty, SectionTitle, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtDateTime } from "@/lib/format";
 import { COMPONENT_LABELS, PROMPT_COMPONENTS, type PromptComponent } from "@/lib/types";
 
-export default function PromptsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const domainId = Number(id);
+export default function PromptsPage() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <PromptsInner />
+    </Suspense>
+  );
+}
+
+function PromptsInner() {
+  const sp = useSearchParams();
+  const domainId = Number(sp.get("id"));
 
   const [prompts, setPrompts] = useState<Record<string, PromptComponent> | null>(null);
   const [active, setActive] = useState<string>(PROMPT_COMPONENTS[0]);
@@ -24,6 +33,7 @@ export default function PromptsPage({ params }: { params: Promise<{ id: string }
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!domainId) return;
     api
       .prompts(domainId)
       .then(setPrompts)
@@ -31,7 +41,7 @@ export default function PromptsPage({ params }: { params: Promise<{ id: string }
   }, [domainId]);
 
   useEffect(() => {
-    if (!prompts) return;
+    if (!prompts || !domainId) return;
     const body = prompts[active]?.body ?? "";
     setDraft(body);
     setBaseline(body);
@@ -54,7 +64,7 @@ export default function PromptsPage({ params }: { params: Promise<{ id: string }
   }, [draft, isJson]);
 
   async function save() {
-    if (jsonError) return;
+    if (jsonError || !domainId) return;
     setSaving(true);
     setErr(null);
     try {
@@ -74,6 +84,7 @@ export default function PromptsPage({ params }: { params: Promise<{ id: string }
     }
   }
 
+  if (!domainId) return <ErrorNote>ドメインが指定されていません。</ErrorNote>;
   if (err && !prompts) return <ErrorNote>読み込みに失敗しました: {err}</ErrorNote>;
   if (!prompts) return <Spinner />;
 
@@ -84,7 +95,7 @@ export default function PromptsPage({ params }: { params: Promise<{ id: string }
           概要
         </Link>{" "}
         /{" "}
-        <Link href={`/domains/${domainId}`} className="hover:underline">
+        <Link href={`/domains?id=${domainId}`} className="hover:underline">
           ドメイン
         </Link>{" "}
         / プロンプト編集

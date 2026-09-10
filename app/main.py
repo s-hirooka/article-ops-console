@@ -31,13 +31,14 @@ app = FastAPI(
     description="AI 記事作成 / SEO 解析パイプラインの運用コンソール",
 )
 
-# CORS_ORIGINS: comma-separated exact origins (e.g. https://xxx.vercel.app).
-# Falls back to allowing any localhost port + *.vercel.app for convenience.
+# CORS_ORIGINS: comma-separated exact origins for the frontend. Falls back to
+# allowing any localhost port + *.onrender.com + *.vercel.app for convenience
+# (the API has no cookie auth, so this is acceptable for a single-tenant tool).
 _origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins or ["http://localhost:3000"],
-    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+",
+    allow_origin_regex=r"https://[a-z0-9-]+\.(onrender\.com|vercel\.app)|http://localhost:\d+",
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=False,

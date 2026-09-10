@@ -57,7 +57,7 @@ export default function Dashboard() {
           {domains.map((d) => (
             <Card key={d.id}>
               <h3 className="text-[14px] font-semibold">
-                <Link href={`/domains/${d.id}`} className="text-accent hover:underline">
+                <Link href={`/domains?id=${d.id}`} className="text-accent hover:underline">
                   {d.domain_key}
                 </Link>
               </h3>
@@ -67,13 +67,13 @@ export default function Dashboard() {
               </div>
               <div className="mt-3 flex gap-2">
                 <Link
-                  href={`/domains/${d.id}/new`}
+                  href={`/domains/new?id=${d.id}`}
                   className="text-[12px] text-accent hover:underline"
                 >
                   ＋ 新規記事
                 </Link>
                 <Link
-                  href={`/domains/${d.id}/prompts`}
+                  href={`/domains/prompts?id=${d.id}`}
                   className="text-[12px] text-accent hover:underline"
                 >
                   プロンプト編集

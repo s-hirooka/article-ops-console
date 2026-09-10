@@ -42,3 +42,17 @@ services:
         sync: false              # https://<service>.onrender.com/oauth/google/callback
       - key: DEV_ACCOUNT_ID
         value: "1"
+
+  # --- P5: Next.js frontend, static export, free Static Site (no sleep) ---
+  - type: web
+    name: article-ops-console-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: out
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE
+        value: https://article-ops-console.onrender.com   # ← 実際のバックエンド URL に合わせる
+    # 静的書き出し（trailingSlash: true）なので各ルートに index.html が出力される。
+    # 未知パスは Next 生成の out/404.html が使われる。rewrite ルールは不要。

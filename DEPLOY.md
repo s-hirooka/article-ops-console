@@ -253,35 +253,34 @@ curl -X POST https://<サービス名>.onrender.com/api/jobs \
 
 ---
 
-## 手順 9（P5）— フロントエンド（Next.js）を Vercel にデプロイ 🧑
+## 手順 9（P5）— フロントエンド（Next.js）を Render Static Site に 🧑
 
-`frontend/` に Next.js 製の管理画面がある。Render のサーバーレンダリング画面
-（`/`）は簡易版として残しつつ、通常はこちらを使う。
+`frontend/` は静的書き出し（`next build` → `frontend/out/`）される Next.js 製の
+管理画面。**Render の無料 Static Site**（サーバーなし・スリープなし・$0）に置く。
+Render のサーバーレンダリング画面（`/`）は簡易フォールバックとして残す。
 
-### 9-1. Vercel でプロジェクト作成
+### 9-1. Render で Static Site を作成
 
-1. <https://vercel.com> にサインアップ → GitHub 連携
-2. **Add New → Project** → リポジトリ `s-hirooka/article-ops-console` を選択
-3. **Root Directory** を `frontend` に設定（重要）
-4. Framework Preset は自動で **Next.js**
-5. **Environment Variables**:
+1. Render ダッシュボード → **New +** → **Static Site**
+2. リポジトリ `s-hirooka/article-ops-console` を選択
+3. 設定:
+   | 項目 | 値 |
+   |------|-----|
+   | Root Directory | `frontend` |
+   | Build Command | `npm install && npm run build` |
+   | Publish Directory | `out` |
+4. **Environment Variables**:
    | Key | Value |
    |-----|-------|
-   | `NEXT_PUBLIC_API_BASE` | `https://article-ops-console.onrender.com`（Render のサービスURL） |
-6. **Deploy**
+   | `NEXT_PUBLIC_API_BASE` | `https://article-ops-console.onrender.com`（バックエンドの URL） |
+5. **Create Static Site** → デプロイ完了後の URL（例
+   `https://article-ops-console-web.onrender.com`）が管理画面。
 
-デプロイ後の URL（例 `https://article-ops-console.vercel.app`）が管理画面。
+### 9-2. バックエンド側の CORS
 
-### 9-2. Render 側で CORS を許可
-
-Render の環境変数に追加（Vercel の本番URLを入れる）:
-
-| Key | Value |
-|-----|-------|
-| `CORS_ORIGINS` | `https://article-ops-console.vercel.app`（複数はカンマ区切り） |
-
-→ Save and deploy。
-（未設定でも `*.vercel.app` と `localhost:*` は既定で許可されるが、明示推奨）
+`*.onrender.com` は既定で許可されるので、通常は設定不要。
+独自ドメインを当てる場合のみ、バックエンド Web サービスの環境変数に
+`CORS_ORIGINS`（カンマ区切りの完全な origin）を追加して Save and deploy。
 
 ### 9-3. ローカルで動かす場合
 
@@ -297,11 +296,11 @@ npm run dev                  # http://localhost:3000
 | パス | 内容 |
 |------|------|
 | `/` | 概要（AI予算 / ドメイン一覧 / 最近のジョブ） |
-| `/domains/[id]` | ドメイン詳細（順位推移グラフ / 次の打ち手 / アラート / 記事一覧） |
-| `/domains/[id]/prompts` | 記事生成プロンプトの編集（Monaco エディタ、8コンポーネント、バージョン履歴） |
-| `/domains/[id]/new` | 新規記事ウィザード（キーワード指定 → 生成 → WordPress 公開） |
+| `/domains?id=N` | ドメイン詳細（順位推移グラフ / 次の打ち手 / アラート / 記事一覧） |
+| `/domains/prompts?id=N` | 記事生成プロンプトの編集（Monaco、8コンポーネント、バージョン履歴） |
+| `/domains/new?id=N` | 新規記事ウィザード（キーワード指定 → 生成 → WordPress 公開） |
 | `/jobs` | ジョブ履歴と詳細 |
 
-> 認証は未実装。`X-Account-Id`（アカウント切替）と `X-User-Id`（固定で1）を
-> ヘッダで送る簡易方式。Vercel を Password Protection（有料）か Vercel Authentication
-> で保護しておくこと。
+> 静的サイトなので動的ルートは使わず、`?id=` のクエリ方式。
+> 認証は未実装（`X-Account-Id` / `X-User-Id` ヘッダのみ）。Render Static Site に
+> Basic 認証を掛けるか、社内からのみアクセスする運用にすること。

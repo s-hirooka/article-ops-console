@@ -83,9 +83,14 @@ The server-rendered dashboard at `/` stays as a fallback.
 | `/domains/[id]/new` | 新規記事ウィザード（キーワード → 生成 → WordPress 公開） |
 | `/jobs` | ジョブ履歴・詳細 |
 
-Backend gained `CORSMiddleware` (`CORS_ORIGINS` env). Deploy: Vercel, Root
-Directory `frontend`, `NEXT_PUBLIC_API_BASE` = Render URL — see `DEPLOY.md` 手順9.
-`next build` は通過済み。
+静的書き出し（`output: "export"` → `frontend/out/`）。動的ルートは使わず `?id=N`
+クエリ方式。Backend に `CORSMiddleware`（既定で `*.onrender.com` / `*.vercel.app` /
+localhost 許可、`CORS_ORIGINS` で上書き）。
+
+**Deploy: Render Static Site**（無料・スリープなし）— Root Directory `frontend`,
+Build `npm install && npm run build`, Publish `out`, `NEXT_PUBLIC_API_BASE` =
+バックエンド URL。詳細は `DEPLOY.md` 手順9。`next build`（静的書き出し）通過済み、
+本番 API に接続して確認済み。
 
 Next: 認証、通知、`rank_sync` の定期実行（GitHub Actions ワークフロー）。
 

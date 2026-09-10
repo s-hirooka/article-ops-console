@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, use, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   Button,
   Card,
@@ -21,25 +21,24 @@ type GenResult = {
   title?: string;
   slug?: string;
   model?: string;
-  cost_usd?: number;
+  cost_usd?: number | string;
   faked?: boolean;
   search_volume?: number | null;
   keyword_threshold?: number;
   warnings?: string[];
 };
 
-export default function NewArticlePage({ params }: { params: Promise<{ id: string }> }) {
+export default function NewArticlePage() {
   return (
     <Suspense fallback={<Spinner />}>
-      <NewArticleInner params={params} />
+      <NewArticleInner />
     </Suspense>
   );
 }
 
-function NewArticleInner({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const domainId = Number(id);
+function NewArticleInner() {
   const sp = useSearchParams();
+  const domainId = Number(sp.get("id"));
 
   const [d, setD] = useState<DomainDetail | null>(null);
   const [keyword, setKeyword] = useState(sp.get("keyword") ?? "");
@@ -56,6 +55,7 @@ function NewArticleInner({ params }: { params: Promise<{ id: string }> }) {
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!domainId) return;
     api.domain(domainId).then(setD).catch(() => setD(null));
     const aId = sp.get("article");
     if (aId) {
@@ -67,6 +67,7 @@ function NewArticleInner({ params }: { params: Promise<{ id: string }> }) {
   }, [domainId, sp]);
 
   async function generate() {
+    if (!domainId) return;
     setRunning(true);
     setFailed(null);
     setResult(null);
@@ -115,6 +116,8 @@ function NewArticleInner({ params }: { params: Promise<{ id: string }> }) {
     }
   }
 
+  if (!domainId) return <ErrorNote>ドメインが指定されていません。</ErrorNote>;
+
   return (
     <>
       <div className="mb-1 text-[13px] text-ink2">
@@ -122,7 +125,7 @@ function NewArticleInner({ params }: { params: Promise<{ id: string }> }) {
           概要
         </Link>{" "}
         /{" "}
-        <Link href={`/domains/${domainId}`} className="hover:underline">
+        <Link href={`/domains?id=${domainId}`} className="hover:underline">
           {d?.domain_key ?? "ドメイン"}
         </Link>{" "}
         / 新規記事
