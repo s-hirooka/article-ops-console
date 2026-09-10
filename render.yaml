@@ -1,0 +1,35 @@
+# Render blueprint — free tier.
+# Postgres is NOT provisioned here: Render's free Postgres expires after 30 days.
+# Use an external Neon free database and set DATABASE_URL in the Render dashboard.
+services:
+  - type: web
+    name: article-ops-console
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt && alembic upgrade head"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"          # google-ads/pillow/psycopg all ship 3.12 wheels
+      - key: DATABASE_URL
+        sync: false              # set to the Neon connection string (dashboard)
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+      - key: GOOGLE_ADS_DEVELOPER_TOKEN
+        sync: false
+      - key: GOOGLE_ADS_OAUTH2_CLIENT_ID
+        sync: false
+      - key: GOOGLE_ADS_OAUTH2_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_ADS_OAUTH2_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_ADS_LOGIN_CUSTOMER_ID
+        sync: false
+      - key: GOOGLE_ADS_DEFAULT_CUSTOMER_ID
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        sync: false              # https://<service>.onrender.com/oauth/google/callback
+      - key: DEV_ACCOUNT_ID
+        value: "1"

@@ -35,6 +35,29 @@ def _digits(value: str | None) -> str:
 
 
 @dataclass(frozen=True)
+class AppSettings:
+    """Web-app runtime settings (P2+)."""
+    database_url: str
+    dev_account_id: int          # single-tenant convenience until auth lands
+    app_name: str = "Article Ops Console"
+
+    @classmethod
+    def from_env(cls) -> "AppSettings":
+        raw = os.environ.get("DATABASE_URL", "sqlite+pysqlite:///./local.db").strip()
+        # Neon / Render hand out postg:// or postgresql:// — normalise to the
+        # psycopg (v3) driver SQLAlchemy expects.
+        if raw.startswith("postgres://"):
+            raw = "postgresql+psycopg://" + raw[len("postgres://"):]
+        elif raw.startswith("postgresql://"):
+            raw = "postgresql+psycopg://" + raw[len("postgresql://"):]
+        return cls(
+            database_url=raw,
+            dev_account_id=int(os.environ.get("DEV_ACCOUNT_ID", "1")),
+            app_name=os.environ.get("APP_NAME", "Article Ops Console"),
+        )
+
+
+@dataclass(frozen=True)
 class GoogleAdsSettings:
     developer_token: str
     client_id: str

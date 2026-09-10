@@ -1,0 +1,33 @@
+# Scheduled rank/analysis sync. Render's free plan has no cron/worker, so
+# GitHub Actions is the scheduler: it hits an authenticated endpoint on the
+# web service, which does the work in a BackgroundTask.
+#
+# Required repo secrets:
+#   APP_BASE_URL   e.g. https://article-ops-console.onrender.com
+#   CRON_TOKEN     shared secret; the endpoint checks it (added in P3)
+name: rank-sync
+
+on:
+  schedule:
+    - cron: "17 19 * * *"     # 04:17 JST daily
+  workflow_dispatch: {}
+
+concurrency:
+  group: rank-sync
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kick the sync endpoint
+        run: |
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' \
+            -X POST "$APP_BASE_URL/internal/cron/rank-sync" \
+            -H "Authorization: Bearer $CRON_TOKEN" \
+            --max-time 120 || true)
+          echo "HTTP $code"; cat /tmp/out.json || true
+          test "$code" = "200" || test "$code" = "202"
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}

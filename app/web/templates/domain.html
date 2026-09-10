@@ -1,0 +1,96 @@
+{% extends "_base.html" %}
+{% block crumb %}<a href="/">概要</a> / {{ d.domain_key }}{% endblock %}
+{% block body %}
+
+<h2>{{ d.domain_key }}</h2>
+<div class="card">
+  <div class="sub">{{ d.base_url }} &nbsp;·&nbsp; GSC: {{ d.gsc_site_url }}</div>
+  <div class="stat-row" style="margin-top:14px">
+    <div class="stat"><b>{{ d.keyword_threshold }}</b><span>月間検索数の下限</span></div>
+    <div class="stat"><b>{{ 'あり' if d.wp_app_password_enc else 'なし' }}</b><span>WP認証</span></div>
+    <div class="stat"><b>{{ 'あり' if d.anthropic_api_key_enc else '共有' }}</b><span>専用APIキー</span></div>
+  </div>
+  {% if prompt_versions %}
+  <div class="sub" style="margin-top:12px">
+    プロンプト版:
+    {% for comp, ver in prompt_versions.items() %}<code>{{ comp }} v{{ ver }}</code> {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<h2>次の打ち手 — 新規記事の候補{% if latest_day %}（{{ latest_day }} 時点）{% endif %}</h2>
+{% if opportunities %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>キーワード</th><th class="num">スコア</th><th>関連URL</th></tr></thead>
+  <tbody>
+  {% for o in opportunities %}
+    <tr>
+      <td>{{ o.keyword }}</td>
+      <td class="num">{{ '%.1f'|format(o.score) }}</td>
+      <td class="sub">{{ o.url }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty">機会スコアがまだありません（analysis ジョブ未実行）。</div>
+{% endif %}
+
+<h2>アラート（直近30日）</h2>
+{% if alerts %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>検知日</th><th>キーワード</th><th>種別</th><th>深刻度</th><th class="num">順位変化</th></tr></thead>
+  <tbody>
+  {% for a in alerts %}
+    <tr>
+      <td class="num">{{ a.detected_date }}</td>
+      <td>{{ a.keyword }}</td>
+      <td><code>{{ a.alert_type }}</code></td>
+      <td>
+        {% set cls = 'crit' if a.severity in ('high','critical') else 'warn' if a.severity=='medium' else 'muted' %}
+        <span class="pill {{ cls }}">{{ a.severity }}</span>
+      </td>
+      <td class="num">
+        {{ '%.0f'|format(a.from_position) if a.from_position is not none else '—' }}
+        →
+        {{ '%.0f'|format(a.to_position) if a.to_position is not none else '—' }}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty">アラートはありません。</div>
+{% endif %}
+
+<h2>記事（最新20件）</h2>
+{% if articles %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>状態</th><th>タイトル</th><th>対象KW</th><th class="num">検索数</th><th class="num">投稿ID</th><th>作成</th></tr></thead>
+  <tbody>
+  {% for a in articles %}
+    <tr>
+      <td>
+        {% set cls = 'ok' if a.status=='published' else 'crit' if a.status=='failed' else 'muted' %}
+        <span class="pill {{ cls }}">{{ a.status }}</span>
+      </td>
+      <td>{{ a.title or '（無題）' }}</td>
+      <td>{{ a.target_keyword or '—' }}</td>
+      <td class="num">{{ a.target_search_volume or '—' }}</td>
+      <td class="num">{{ a.wp_post_id or '—' }}</td>
+      <td class="num">{{ a.created_at.strftime('%Y-%m-%d') if a.created_at else '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty">記事はまだありません。</div>
+{% endif %}
+
+{% endblock %}

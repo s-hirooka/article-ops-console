@@ -1,0 +1,66 @@
+{% extends "_base.html" %}
+{% block crumb %}概要{% endblock %}
+{% block body %}
+
+<h2>AI予算（{{ period }}）</h2>
+<div class="card" style="max-width:420px">
+  <div class="stat-row">
+    <div class="stat"><b>${{ '%.2f'|format(spent) }}</b><span>今月の消費</span></div>
+    <div class="stat"><b>${{ '%.2f'|format(budget) }}</b><span>上限</span></div>
+    <div class="stat"><b>{{ budget_pct }}%</b><span>消化率</span></div>
+  </div>
+  <div class="meter"><i style="width:{{ [budget_pct,100]|min }}%"></i></div>
+  <div class="sub" style="margin-top:8px">
+    超過時の動作: <code>{{ account.llm_budget_action if account else '—' }}</code>
+    &nbsp;/&nbsp; 既定モデル: <code>{{ account.draft_model if account else '—' }}</code>
+  </div>
+</div>
+
+<h2>ドメイン（{{ cards|length }}）</h2>
+{% if cards %}
+<div class="grid">
+  {% for c in cards %}
+  <div class="card">
+    <h3><a href="/domains/{{ c.d.id }}">{{ c.d.domain_key }}</a></h3>
+    <div class="sub">{{ c.d.base_url }}</div>
+    <div class="stat-row">
+      <div class="stat"><b>{{ c.articles }}</b><span>記事</span></div>
+      <div class="stat"><b>{{ c.open_alerts }}</b><span>アラート/30日</span></div>
+      <div class="stat"><b>{{ c.d.keyword_threshold }}</b><span>検索数の下限</span></div>
+    </div>
+    <div class="sub" style="margin-top:10px">
+      最終ランク同期: {{ c.last_sync or '未同期' }}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">ドメインがまだありません。<code>scripts/seed_from_sites.py</code> で取り込めます。</div>
+{% endif %}
+
+<h2>最近のジョブ</h2>
+{% if jobs %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>種別</th><th>状態</th><th>ドメイン</th><th class="num">LLMコスト</th><th>作成</th></tr></thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr>
+      <td><code>{{ j.kind }}</code></td>
+      <td>
+        {% set cls = 'ok' if j.status=='succeeded' else 'crit' if j.status=='failed' else 'muted' %}
+        <span class="pill {{ cls }}">{{ j.status }}</span>
+      </td>
+      <td class="num">{{ j.domain_id or '—' }}</td>
+      <td class="num">${{ '%.4f'|format(j.llm_cost_usd) }}</td>
+      <td class="num">{{ j.created_at.strftime('%Y-%m-%d %H:%M') if j.created_at else '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty">ジョブ履歴はまだありません。</div>
+{% endif %}
+
+{% endblock %}

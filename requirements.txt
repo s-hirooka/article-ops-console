@@ -6,11 +6,15 @@ cryptography>=43.0            # OAuth リフレッシュトークンの暗号化
 google-auth>=2.35            # サーバーサイド Google OAuth（トークン交換 / 更新）
 requests>=2.32                # OAuth トークンエンドポイントへの HTTP
 
+# --- P2: サーバー側デプロイ + 読み取り専用ダッシュボード ---
+fastapi>=0.115
+uvicorn[standard]>=0.32
+sqlalchemy>=2.0
+psycopg[binary]>=3.2         # Postgres ドライバ（本番: Neon）
+alembic>=1.13
+jinja2>=3.1                  # サーバーレンダリングのダッシュボード
+pydantic-settings>=2.5
+
 # --- 以降のフェーズで追加予定 ---
-# fastapi>=0.115
-# uvicorn[standard]>=0.32
-# sqlalchemy>=2.0
-# psycopg[binary]>=3.2
-# alembic>=1.13
-# anthropic>=0.40
+# anthropic>=0.40             # P3: 記事生成
 # httpx>=0.27
