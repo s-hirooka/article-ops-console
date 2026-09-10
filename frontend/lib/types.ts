@@ -1,0 +1,140 @@
+export interface Account {
+  id: number;
+  name: string;
+  role: "owner" | "editor" | "viewer";
+}
+
+export interface DomainSummary {
+  id: number;
+  domain_key: string;
+  base_url: string;
+  gsc_site_url: string;
+  keyword_threshold: number;
+}
+
+export interface DomainDetail extends DomainSummary {
+  wp_base_url: string | null;
+  has_wp_credentials: boolean;
+  has_own_anthropic_key: boolean;
+  prompt_versions: Record<string, number>;
+}
+
+export interface RankRow {
+  metric_date: string;
+  keyword: string;
+  url: string;
+  post_id: number | null;
+  gsc_average_position: number | null;
+  serp_rank: number | null;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  search_volume: number | null;
+}
+
+export interface Opportunity {
+  score_date: string;
+  keyword: string;
+  url: string;
+  post_id: number | null;
+  score: number | string;
+  component_breakdown_json: Record<string, unknown>;
+}
+
+export interface Alert {
+  detected_date: string;
+  keyword: string;
+  url: string;
+  alert_type: string;
+  severity: string;
+  from_position: number | null;
+  to_position: number | null;
+}
+
+export interface Article {
+  id: number;
+  status: "draft" | "published" | "failed";
+  title: string | null;
+  slug: string | null;
+  wp_post_id: number | null;
+  target_keyword: string | null;
+  target_search_volume: number | null;
+  eyecatch_url: string | null;
+  created_at: string | null;
+  published_at: string | null;
+}
+
+export interface Job {
+  id: string;
+  kind: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  domain_id: number | null;
+  params?: Record<string, unknown>;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  llm_cost_usd: number;
+  created_at: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+
+export interface JobRunResult {
+  job_id: string;
+  status: Job["status"];
+  result: Record<string, unknown> | null;
+  error: string | null;
+  llm_cost_usd: number;
+}
+
+export interface UsageLlm {
+  period: string;
+  spent_usd: number;
+  budget_usd: number | null;
+  budget_action: string | null;
+  remaining_usd: number | null;
+  by_model: Record<string, number>;
+}
+
+export interface Recommendations {
+  domain_id: number;
+  keyword_threshold: number;
+  new_article_ideas: { keyword: string; score: number; url: string }[];
+  rewrite_candidates: {
+    keyword: string;
+    url: string;
+    detected_date: string;
+    severity: string;
+    from_position: number | null;
+    to_position: number | null;
+  }[];
+}
+
+export interface PromptComponent {
+  version: number;
+  body: string;
+  edited_by: number | null;
+}
+
+export const PROMPT_COMPONENTS = [
+  "system_prompt",
+  "article_structure",
+  "product_block_spec",
+  "internal_link_policy",
+  "title_format",
+  "vc_auto_ads_defaults",
+  "eyecatch_style",
+  "keyword_threshold",
+] as const;
+
+export type PromptComponentName = (typeof PROMPT_COMPONENTS)[number];
+
+export const COMPONENT_LABELS: Record<string, string> = {
+  system_prompt: "システムプロンプト",
+  article_structure: "記事構成",
+  product_block_spec: "商品ブロック",
+  internal_link_policy: "内部リンク方針",
+  title_format: "タイトル形式",
+  vc_auto_ads_defaults: "vc_auto_ads 既定値 (JSON)",
+  eyecatch_style: "アイキャッチ設定 (JSON)",
+  keyword_threshold: "月間検索数の下限",
+};

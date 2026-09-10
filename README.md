@@ -70,9 +70,24 @@ Live use needs: `ANTHROPIC_API_KEY`, a Google OAuth Web client (for
 OAuth `state` is in-process — keep the Render web service at 1 instance, or add
 Redis.
 
-Next: **P5** — Next.js frontend (Monaco prompt editor, wizard UI, Tremor
-charts) per spec §08; notifications; scheduled `rank_sync` via the GitHub
-Actions workflow once deployed.
+## Status — P5: 「Next.js フロントエンド」
+
+`frontend/` — Next.js (App Router) + Tailwind, calls the FastAPI on Render.
+The server-rendered dashboard at `/` stays as a fallback.
+
+| 画面 | |
+|------|--|
+| `/` | 概要（AI予算 / ドメイン一覧 / 最近のジョブ） |
+| `/domains/[id]` | 順位推移グラフ（Recharts）/ 次の打ち手 / アラート / 記事一覧 |
+| `/domains/[id]/prompts` | プロンプト編集（Monaco、8コンポーネント、バージョン履歴） |
+| `/domains/[id]/new` | 新規記事ウィザード（キーワード → 生成 → WordPress 公開） |
+| `/jobs` | ジョブ履歴・詳細 |
+
+Backend gained `CORSMiddleware` (`CORS_ORIGINS` env). Deploy: Vercel, Root
+Directory `frontend`, `NEXT_PUBLIC_API_BASE` = Render URL — see `DEPLOY.md` 手順9.
+`next build` は通過済み。
+
+Next: 認証、通知、`rank_sync` の定期実行（GitHub Actions ワークフロー）。
 
 ## Layout
 
