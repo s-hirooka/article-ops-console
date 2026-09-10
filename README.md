@@ -40,10 +40,6 @@ https://claude.ai/code/artifact/4264f415-3aff-4a8e-a941-fc43d272b76b
 
 ## Status — P1: 「Windows依存を外す」
 
-ここから今のREADMEを続ける
-
-## Status — P1: 「Windows依存を外す」
-
 | Sub-task | State |
 |----------|-------|
 | (a) keyword volume: `KeywordQueryRunner.exe` → `google-ads` Python | ✅ ported + parity-verified (`scripts/check_keyword_parity.py`) |
@@ -112,9 +108,11 @@ The server-rendered dashboard at `/` stays as a fallback.
 | 画面 | |
 |------|--|
 | `/` | 概要（AI予算 / ドメイン一覧 / 最近のジョブ） |
-| `/domains/[id]` | 順位推移グラフ（Recharts）/ 次の打ち手 / アラート / 記事一覧 |
-| `/domains/[id]/prompts` | プロンプト編集（Monaco、8コンポーネント、バージョン履歴） |
-| `/domains/[id]/new` | 新規記事ウィザード（キーワード → 生成 → WordPress 公開） |
+| `/domains?id=N` | 順位推移グラフ（Recharts）/ 既存ページの改善候補 / 下落ページ / アラート / 記事一覧 |
+| `/domains/topics?id=N` | 新規テーマ探索（Google Ads キーワードアイデア → 既出・閾値未満を除外） |
+| `/domains/prompts?id=N` | プロンプト編集（Monaco、8コンポーネント、バージョン履歴） |
+| `/domains/new?id=N` | 新規記事ウィザード（キーワード → 生成） |
+| `/articles?id=N` | 記事本文プレビュー + WordPress公開 / 下書き保存 / 削除 |
 | `/jobs` | ジョブ履歴・詳細 |
 
 静的書き出し（`output: "export"` → `frontend/out/`）。動的ルートは使わず `?id=N`
@@ -125,6 +123,12 @@ localhost 許可、`CORS_ORIGINS` で上書き）。
 Build `npm install && npm run build`, Publish `out`, `NEXT_PUBLIC_API_BASE` =
 バックエンド URL。詳細は `DEPLOY.md` 手順9。`next build`（静的書き出し）通過済み、
 本番 API に接続して確認済み。
+
+**新規テーマ探索**: `POST /api/domains/{id}/topic-ideas`（`services/topic_research.py`）
+— シード語を Google Ads の GenerateKeywordIdeas で展開し、既ランク（GSC）/ 記事化済み /
+閾値未満を除外、語順・助詞違いをまとめて検索数順に返す。
+**記事の閲覧・操作**: `GET /api/articles/{id}`（本文込み）、`DELETE /api/articles/{id}`
+（WP 投稿は既定で下書きに戻す、`?trash_wp=true` でゴミ箱）。
 
 Next: 認証、通知、`rank_sync` の定期実行（GitHub Actions ワークフロー）。
 
