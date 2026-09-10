@@ -1,0 +1,24 @@
+# secrets
+.env
+*.env
+google-ads.yaml
+**/service_account*.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# local data / scratch
+*.db
+scratch/
+*.log
+
+# os / editor
+.DS_Store
+.vscode/
+.idea/
