@@ -35,8 +35,24 @@ first.
 Google Cloud *Web* OAuth client, then set env vars per `render.yaml` and
 `git push`.
 
-Next: **P3** — article wizard, per-domain prompt editing, account switching /
-invites, job triggering.
+## Status — P3: 「記事ウィザード + プロンプト編集 + アカウント運用」
+
+| Piece | State |
+|-------|-------|
+| Write API (`app/api/routes_write.py`): create domain, prompt versions (PUT, auto-increment), member invite, job create/get, account list | ✅ |
+| Job runner (`app/services/jobs.py`) — in-process `BackgroundTasks`, per-job `tenant_session`, status/result/error on the `jobs` row | ✅ |
+| Prompt assembly (`app/services/prompt_assembly.py`) — 8 components → one system prompt, built-in defaults for a fresh domain | ✅ |
+| Article pipeline (`app/services/article_pipeline.py`) — volume gate → budget precheck → LLM draft → usage ledger → eyecatch → `articles` row | ✅ |
+| LLM wrapper (`app/services/llm.py`) — Anthropic streaming + strict-JSON parse; `LLM_FAKE=1` / no key → deterministic offline stub | ✅ |
+| Budget enforcement (`app/services/budget.py`, `pricing.py`) — monthly budget (block/warn) + per-job ceiling + usage recording | ✅ |
+| `scripts/smoke_p3.py` — 26 checks: domains, prompt versioning, test_prompt + article_generate jobs, threshold gate + force, budget block, owner-only invite, account switching, write-path tenant isolation | ✅ **PASS** |
+
+Real article generation needs `ANTHROPIC_API_KEY` (or a per-domain BYOK key in
+`domains.anthropic_api_key_enc`); everything else runs offline.
+
+Next: **P4** — Next.js frontend (Monaco prompt editor, wizard UI), WordPress
+publish step, RankPulse sync/analysis wired into the `rank_sync` / `analysis`
+jobs (currently no-op), notifications.
 
 ## Layout
 
@@ -47,6 +63,13 @@ app/
   api/
     deps.py                     account resolution + tenant session dep
     routes_read.py              read-only endpoints
+    routes_write.py             domains / prompts / members / jobs
+  services/
+    prompt_assembly.py          8 components -> one system prompt
+    llm.py                      Anthropic draft (streaming; LLM_FAKE stub)
+    pricing.py  budget.py       cost table + monthly/job budget enforcement
+    article_pipeline.py         volume gate -> draft -> ledger -> eyecatch -> row
+    jobs.py                     enqueue + in-process background runner
   db/
     models.py                   SQLAlchemy 2.0 ORM (mirrors 0001 migration)
     session.py                  engine + tenant_session(account_id)
@@ -66,6 +89,7 @@ scripts/
   check_oauth_crypto.py         Fernet + auth-URL builder (offline)
   seed_from_sites.py            Sites → accounts/domains
   smoke_api.py                  boot app on SQLite, hit every read route
+  smoke_p3.py                   write API + jobs + budget (offline, LLM_FAKE)
 ```
 
 ## Local dev
