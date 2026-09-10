@@ -243,6 +243,29 @@ def create_job(
     return {"job_id": job_id, "status": "queued"}
 
 
+class PublishIn(BaseModel):
+    status: str = Field(default="publish", pattern="^(publish|draft)$")
+
+
+@router.post("/articles/{article_id}/publish")
+def publish_article_endpoint(
+    article_id: int,
+    body: PublishIn | None = None,
+    session: Session = Depends(db),
+) -> dict:
+    from app.services.publish import PublishError, publish_article
+
+    try:
+        return publish_article(
+            session,
+            account_id=_aid(session),
+            article_id=article_id,
+            status=(body.status if body else "publish"),
+        )
+    except PublishError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str, session: Session = Depends(db)) -> dict:
     j = session.get(m.Job, job_id)

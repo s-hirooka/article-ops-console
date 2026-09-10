@@ -1,0 +1,120 @@
+"""Publish a draft article to WordPress (spec §06 final step, made explicit).
+
+Draft -> live post. Re-renders the eyecatch from (title, style), uploads it as
+media, sets it as the featured image, then creates (or updates) the post.
+Writes ``wp_post_id`` / ``eyecatch_url`` / ``status='published'`` back.
+
+Needs the domain's WordPress credentials (``wp_base_url`` / ``wp_username`` /
+``wp_app_password_enc``). ``WP_FAKE=1`` bypasses the real API.
+"""
+from __future__ import annotations
+
+import os
+import re
+
+from sqlalchemy.orm import Session
+
+from app.db import models as m
+from app.integrations.wordpress import WordPressClient, WordPressCreds, WordPressError
+from app.services.eyecatch_render import render_banner
+
+
+class PublishError(RuntimeError):
+    pass
+
+
+def _creds(domain: m.Domain) -> WordPressCreds:
+    if os.environ.get("WP_FAKE") == "1":
+        return WordPressCreds(domain.wp_base_url or domain.base_url, "fake", "fake")
+    if not (domain.wp_base_url and domain.wp_username and domain.wp_app_password_enc):
+        raise PublishError(
+            "この domain に WordPress 認証情報が設定されていません。"
+        )
+    try:
+        from app.security.crypto import decrypt
+
+        pw = decrypt(domain.wp_app_password_enc)
+    except Exception as exc:
+        raise PublishError(f"WordPress パスワードの復号に失敗しました: {exc}") from exc
+    return WordPressCreds(domain.wp_base_url, domain.wp_username, pw)
+
+
+def publish_article(
+    session: Session,
+    *,
+    account_id: int,
+    article_id: int,
+    status: str = "publish",
+) -> dict:
+    art = session.get(m.Article, article_id)
+    if art is None or art.account_id != account_id:
+        raise PublishError("article が見つかりません。")
+    if art.status == "published" and art.wp_post_id:
+        raise PublishError(f"既に公開済みです（wp_post_id={art.wp_post_id}）。")
+
+    domain = session.get(m.Domain, art.domain_id)
+    if domain is None:
+        raise PublishError("domain が見つかりません。")
+
+    client = WordPressClient(_creds(domain))
+    meta = dict(art.meta_json or {})
+    style = {}
+    # domain's eyecatch_style prompt component, if any
+    try:
+        from app.services.prompt_assembly import assemble
+
+        style = assemble(session, domain.id).eyecatch_style
+    except Exception:
+        pass
+
+    featured_media = None
+    eyecatch_url = art.eyecatch_url
+    try:
+        png = render_banner(art.title or art.target_keyword or "記事", style)
+        slug = art.slug or re.sub(r"[^a-z0-9-]+", "-", (art.title or "eyecatch").lower())
+        media = client.upload_media_bytes(png, f"{slug[:60] or 'eyecatch'}.png")
+        featured_media = media.get("id")
+        eyecatch_url = media.get("source_url") or eyecatch_url
+    except (WordPressError, OSError) as exc:
+        meta.setdefault("warnings", []).append(f"アイキャッチのアップロード失敗: {exc}")
+
+    try:
+        if art.wp_post_id:
+            resp = client.update_post(
+                art.wp_post_id,
+                title=art.title,
+                content=art.body_html or "",
+                status=status,
+                **({"featured_media": featured_media} if featured_media else {}),
+            )
+        else:
+            resp = client.create_post(
+                title=art.title or "（無題）",
+                content=art.body_html or "",
+                slug=art.slug or None,
+                status=status,
+                featured_media=featured_media,
+            )
+    except WordPressError as exc:
+        raise PublishError(f"WordPress への投稿に失敗しました: {exc}") from exc
+
+    art.wp_post_id = int(resp.get("id") or art.wp_post_id or 0) or None
+    art.eyecatch_url = eyecatch_url
+    art.status = "published" if status == "publish" else "draft"
+    if art.status == "published":
+        from datetime import datetime, timezone
+
+        art.published_at = datetime.now(timezone.utc)
+    meta["wp_link"] = resp.get("link")
+    art.meta_json = meta
+    session.flush()
+
+    return {
+        "article_id": art.id,
+        "wp_post_id": art.wp_post_id,
+        "link": resp.get("link"),
+        "status": art.status,
+        "featured_media": featured_media,
+        "eyecatch_url": art.eyecatch_url,
+        "warnings": meta.get("warnings", []),
+    }

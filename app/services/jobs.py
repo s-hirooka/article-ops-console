@@ -72,7 +72,9 @@ def run_job(job_id: str) -> None:
             result = _dispatch(s, job)
             job.result_json = result
             job.status = "succeeded"
-        except (PipelineError, BudgetExceeded, ValueError) as exc:
+        except (PipelineError, BudgetExceeded, ValueError, RuntimeError) as exc:
+            # RuntimeError covers NoGoogleConnection / GscError / PublishError /
+            # WordPressError — all carry a user-readable message.
             job.status = "failed"
             job.error = str(exc)
         except Exception as exc:  # pragma: no cover - unexpected
@@ -123,7 +125,30 @@ def _dispatch(s: Session, job: m.Job) -> dict:
             "keyword_threshold": a.keyword_threshold,
         }
 
-    if job.kind in ("rank_sync", "analysis", "eyecatch"):
-        return {"note": f"{job.kind}: RankPulse 連携は P4 で実装予定（現状はno-op）。"}
+    if job.kind == "rank_sync":
+        from app.services.rank_sync import run_rank_sync
+
+        return run_rank_sync(
+            s,
+            account_id=job.account_id,
+            domain_id=job.domain_id or int(p["domain_id"]),
+            start_date=p.get("start_date"),
+            end_date=p.get("end_date"),
+        )
+
+    if job.kind == "analysis":
+        from app.services.analysis import run_analysis
+
+        return run_analysis(
+            s,
+            account_id=job.account_id,
+            domain_id=job.domain_id or int(p["domain_id"]),
+        )
+
+    if job.kind == "eyecatch":
+        from app.services.eyecatch_render import render_banner
+
+        png = render_banner(p.get("title", "記事"), p.get("style", {}))
+        return {"bytes": len(png)}
 
     raise ValueError(f"dispatch 未対応: {job.kind}")

@@ -71,23 +71,13 @@ def _lookup_volume(keyword: str) -> int | None:
 
 
 def _render_eyecatch(style: dict, title: str) -> int:
-    """Return byte length of a rendered banner, or 0 on any failure.
-
-    P3 keeps the bytes only long enough to size/attach; upload happens at
-    publish. Kept deliberately defensive — a font or Pillow hiccup must not
-    fail article generation.
-    """
+    """Byte length of the rendered banner, or 0 on failure. Same renderer the
+    publish step uses, so the draft's size preview matches what gets uploaded.
+    Deliberately defensive — a Pillow hiccup must not fail generation."""
     try:
-        from app.integrations.eyecatch import W, H  # noqa: F401
-        from app.integrations import eyecatch as es
-        from PIL import ImageDraw
+        from app.services.eyecatch_render import render_banner
 
-        es.W = int(style.get("width", 1536))
-        es.H = int(style.get("height", 1024))
-        canvas = es.new_canvas((251, 247, 240), (232, 222, 206))
-        draw = ImageDraw.Draw(canvas)
-        draw.text((80, 80), title[:22], font=es.font("bold", 64), fill=(52, 44, 34))
-        return len(es.save_png(canvas))
+        return len(render_banner(title, style))
     except Exception:
         return 0
 

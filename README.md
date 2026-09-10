@@ -50,9 +50,29 @@ Google Cloud *Web* OAuth client, then set env vars per `render.yaml` and
 Real article generation needs `ANTHROPIC_API_KEY` (or a per-domain BYOK key in
 `domains.anthropic_api_key_enc`); everything else runs offline.
 
-Next: **P4** — Next.js frontend (Monaco prompt editor, wizard UI), WordPress
-publish step, RankPulse sync/analysis wired into the `rank_sync` / `analysis`
-jobs (currently no-op), notifications.
+## Status — P4: 「公開・GSC連携・解析」
+
+| Piece | State |
+|-------|-------|
+| WordPress publish — `POST /api/articles/{id}/publish`, `app/services/publish.py` (re-render eyecatch → upload media → featured image → create/update post → write back `wp_post_id` / `status` / `eyecatch_url`) | ✅ `WP_FAKE=1` for offline |
+| Self-contained WP REST client (`app/integrations/wordpress.py`) | ✅ |
+| Google OAuth connect — `GET /oauth/google/start` → `/oauth/google/callback` → `oauth_tokens` (Fernet), `GET /api/oauth/google/status` | ✅ |
+| Access-token refresh (`app/integrations/google_token.py`) — decrypt → refresh when stale → re-encrypt | ✅ |
+| GSC Search Analytics client (`app/integrations/gsc.py`), `GSC_FAKE=1` | ✅ |
+| `rank_sync` job (`app/services/rank_sync.py`) — port of RankPulse's fragment-strip + impression-weighted aggregation → `keyword_rank_history` upsert | ✅ |
+| `analysis` job (`app/services/analysis.py`) — compact port of opportunity score + rank alerts → `opportunity_scores` / `rank_alerts` | ✅ |
+| `eyecatch` job + shared `app/services/eyecatch_render.py` (used by pipeline + publish) | ✅ |
+| `scripts/smoke_p4.py` — 17 checks: generate→publish→re-publish-rejected, rank_sync rows, analysis scores+alerts, eyecatch bytes, oauth status | ✅ **PASS** |
+
+Live use needs: `ANTHROPIC_API_KEY`, a Google OAuth Web client (for
+`/oauth/google/start`), and per-domain WordPress creds
+(`domains.wp_base_url` / `wp_username` / `wp_app_password_enc`).
+OAuth `state` is in-process — keep the Render web service at 1 instance, or add
+Redis.
+
+Next: **P5** — Next.js frontend (Monaco prompt editor, wizard UI, Tremor
+charts) per spec §08; notifications; scheduled `rank_sync` via the GitHub
+Actions workflow once deployed.
 
 ## Layout
 
@@ -63,12 +83,16 @@ app/
   api/
     deps.py                     account resolution + tenant session dep
     routes_read.py              read-only endpoints
-    routes_write.py             domains / prompts / members / jobs
+    routes_write.py             domains / prompts / members / jobs / publish
+    routes_oauth.py             Google connect flow
   services/
     prompt_assembly.py          8 components -> one system prompt
     llm.py                      Anthropic draft (streaming; LLM_FAKE stub)
     pricing.py  budget.py       cost table + monthly/job budget enforcement
     article_pipeline.py         volume gate -> draft -> ledger -> eyecatch -> row
+    eyecatch_render.py          deterministic banner -> PNG (pipeline + publish)
+    publish.py                  draft -> WordPress post (WP_FAKE stub)
+    rank_sync.py  analysis.py   GSC pull -> rank history -> opp scores + alerts
     jobs.py                     enqueue + in-process background runner
   db/
     models.py                   SQLAlchemy 2.0 ORM (mirrors 0001 migration)
@@ -78,6 +102,9 @@ app/
   integrations/
     google_ads_keywords.py      GenerateKeywordHistoricalMetrics (google-ads lib)
     google_oauth.py             authorization-code flow
+    google_token.py             stored refresh token -> live access token
+    gsc.py                      Search Console searchAnalytics.query
+    wordpress.py                WP REST client (posts + media)
     eyecatch.py                 Pillow banner rendering, Noto Sans JP
   security/crypto.py            Fernet encrypt/decrypt for secrets at rest
   assets/fonts/                 NotoSansJP-VF.ttf (SIL OFL 1.1)
@@ -90,6 +117,7 @@ scripts/
   seed_from_sites.py            Sites → accounts/domains
   smoke_api.py                  boot app on SQLite, hit every read route
   smoke_p3.py                   write API + jobs + budget (offline, LLM_FAKE)
+  smoke_p4.py                   publish + rank_sync + analysis (offline, *_FAKE)
 ```
 
 ## Local dev
