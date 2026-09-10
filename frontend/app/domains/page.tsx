@@ -18,11 +18,11 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtDate, num, severityTone } from "@/lib/format";
+import { HINT_LABEL } from "@/lib/types";
 import type {
   Alert,
   Article,
   DomainDetail,
-  Opportunity,
   RankRow,
   Recommendations,
 } from "@/lib/types";
@@ -41,7 +41,6 @@ function DomainInner() {
 
   const [d, setD] = useState<DomainDetail | null>(null);
   const [rank, setRank] = useState<RankRow[]>([]);
-  const [opps, setOpps] = useState<Opportunity[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [rec, setRec] = useState<Recommendations | null>(null);
@@ -52,15 +51,13 @@ function DomainInner() {
     Promise.all([
       api.domain(domainId),
       api.rankHistory(domainId, 90),
-      api.opportunities(domainId, 15),
       api.alerts(domainId, 30),
       api.articles(domainId),
       api.recommendations(domainId),
     ])
-      .then(([dd, rk, op, al, ar, rc]) => {
+      .then(([dd, rk, al, ar, rc]) => {
         setD(dd);
         setRank(rk);
-        setOpps(op);
         setAlerts(al);
         setArticles(ar);
         setRec(rc);
@@ -112,42 +109,49 @@ function DomainInner() {
         <RankChart rows={rank} />
       </Card>
 
-      <SectionTitle>次の打ち手 — 新規記事の候補</SectionTitle>
-      {opps.length === 0 ? (
+      <SectionTitle>次の打ち手 — 既存ページの改善候補</SectionTitle>
+      {!rec || rec.improvement_candidates.length === 0 ? (
         <Empty>機会スコアがまだありません（analysis ジョブ未実行）。</Empty>
       ) : (
-        <TableWrap>
-          <thead>
-            <tr>
-              <Th>キーワード</Th>
-              <Th num>スコア</Th>
-              <Th>関連URL</Th>
-              <Th>アクション</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {opps.map((o, i) => (
-              <tr key={i}>
-                <Td>{o.keyword}</Td>
-                <Td num>{num(o.score)}</Td>
-                <Td className="font-mono text-[12px] text-ink2">{o.url}</Td>
-                <Td>
-                  <Link
-                    href={`/domains/new?id=${domainId}&keyword=${encodeURIComponent(o.keyword)}`}
-                    className="text-[12px] text-accent hover:underline"
-                  >
-                    この語で作成
-                  </Link>
-                </Td>
+        <>
+          <div className="mb-2 text-[12px] text-ink2">{rec.note}</div>
+          <TableWrap>
+            <thead>
+              <tr>
+                <Th>キーワード</Th>
+                <Th num>スコア</Th>
+                <Th num>順位</Th>
+                <Th>打ち手</Th>
+                <Th>該当ページ</Th>
               </tr>
-            ))}
-          </tbody>
-        </TableWrap>
+            </thead>
+            <tbody>
+              {rec.improvement_candidates.map((o, i) => (
+                <tr key={i}>
+                  <Td>{o.keyword}</Td>
+                  <Td num>{num(o.score)}</Td>
+                  <Td num>{num(o.position, 0)}</Td>
+                  <Td className="text-[12px]">{HINT_LABEL[o.action_hint]}</Td>
+                  <Td>
+                    <a
+                      href={o.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-[12px] text-accent hover:underline"
+                    >
+                      開く ↗
+                    </a>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        </>
       )}
 
-      {rec && rec.rewrite_candidates.length > 0 && (
+      {rec && rec.declining.length > 0 && (
         <>
-          <SectionTitle>リライト候補（順位下落）</SectionTitle>
+          <SectionTitle>順位が下落したページ（直近30日）</SectionTitle>
           <TableWrap>
             <thead>
               <tr>
@@ -155,10 +159,11 @@ function DomainInner() {
                 <Th>キーワード</Th>
                 <Th>深刻度</Th>
                 <Th num>順位</Th>
+                <Th>該当ページ</Th>
               </tr>
             </thead>
             <tbody>
-              {rec.rewrite_candidates.map((r, i) => (
+              {rec.declining.map((r, i) => (
                 <tr key={i}>
                   <Td num>{fmtDate(r.detected_date)}</Td>
                   <Td>{r.keyword}</Td>
@@ -167,6 +172,16 @@ function DomainInner() {
                   </Td>
                   <Td num>
                     {num(r.from_position, 0)} → {num(r.to_position, 0)}
+                  </Td>
+                  <Td>
+                    <a
+                      href={r.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-[12px] text-accent hover:underline"
+                    >
+                      開く ↗
+                    </a>
                   </Td>
                 </tr>
               ))}

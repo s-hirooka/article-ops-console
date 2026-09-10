@@ -95,11 +95,30 @@ export interface UsageLlm {
   by_model: Record<string, number>;
 }
 
+export type ActionHint = "ctr" | "rewrite" | "weak" | "review";
+
+export const HINT_LABEL: Record<ActionHint, string> = {
+  ctr: "上位。タイトル・説明文の見直しでCTR改善",
+  rewrite: "あと一歩。本文リライトで上位化を狙える",
+  weak: "内容が弱い。大幅改稿 or 別記事に分割",
+  review: "要確認",
+};
+
 export interface Recommendations {
   domain_id: number;
   keyword_threshold: number;
-  new_article_ideas: { keyword: string; score: number; url: string }[];
-  rewrite_candidates: {
+  note: string;
+  improvement_candidates: {
+    keyword: string;
+    score: number | string;
+    url: string;
+    post_id: number | null;
+    position: number | null;
+    impressions: number | null;
+    ctr: number | null;
+    action_hint: ActionHint;
+  }[];
+  declining: {
     keyword: string;
     url: string;
     detected_date: string;

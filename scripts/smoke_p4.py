@@ -118,7 +118,7 @@ def main() -> int:
           bool(opp and opp[0]["component_breakdown_json"].get("weights")))
 
     rec = c.get("/api/domains/1/recommendations").json()
-    check("recommendations computed", "new_article_ideas" in rec)
+    check("recommendations computed", "improvement_candidates" in rec and "declining" in rec)
 
     # --- eyecatch job -----------------------------------------------
     r = c.post("/api/jobs", headers=H, json={

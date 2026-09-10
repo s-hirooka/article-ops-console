@@ -163,25 +163,31 @@ def articles(domain_id: int, session: Session = Depends(db)) -> list[dict]:
 def recommendations(domain_id: int, session: Session = Depends(db)) -> dict:
     """「次の打ち手」— computed, read-only.
 
-    * new-article ideas: top opportunity keywords on the latest scoring day
-      whose search volume clears the domain threshold and which are not already
-      the target of an existing article.
-    * rewrite candidates: high-severity 'drop' alerts in the last 30 days.
+    The opportunity scores come from GSC Search Analytics, i.e. queries that an
+    **existing page already appears for**. So these are *improvement* candidates
+    (rewrite / title-CTR / expand), NOT brand-new-topic ideas — genuine
+    coverage-gap discovery needs keyword research, which is not built yet.
+
+    * improvement_candidates: top opportunity scores on the latest day, each
+      tagged with an action hint by its current position.
+    * declining: 'drop' alerts in the last 30 days.
     """
     d = _get_domain(session, domain_id)
-    covered = set(
-        session.scalars(
-            select(m.Article.target_keyword).where(
-                m.Article.domain_id == domain_id,
-                m.Article.target_keyword.is_not(None),
-            )
-        ).all()
-    )
     latest_day = session.scalar(
         select(func.max(m.OpportunityScore.score_date))
         .where(m.OpportunityScore.domain_id == domain_id)
     )
-    ideas: list[dict] = []
+
+    def _hint(pos: float | None) -> str:
+        if pos is None:
+            return "review"
+        if pos <= 10:
+            return "ctr"          # ranks well — title / meta description tuning
+        if pos <= 30:
+            return "rewrite"      # striking distance — rewrite / expand
+        return "weak"             # thin coverage — major rework or split off
+
+    improvements: list[dict] = []
     if latest_day is not None:
         for r in session.scalars(
             select(m.OpportunityScore)
@@ -190,16 +196,25 @@ def recommendations(domain_id: int, session: Session = Depends(db)) -> dict:
                 m.OpportunityScore.score_date == latest_day,
             )
             .order_by(m.OpportunityScore.score.desc())
-            .limit(50)
+            .limit(15)
         ).all():
-            if r.keyword in covered:
-                continue
-            ideas.append({"keyword": r.keyword, "score": r.score, "url": r.url})
-            if len(ideas) >= 10:
-                break
+            inputs = (r.component_breakdown_json or {}).get("inputs", {})
+            pos = inputs.get("position")
+            improvements.append(
+                {
+                    "keyword": r.keyword,
+                    "score": r.score,
+                    "url": r.url,
+                    "post_id": r.post_id,
+                    "position": pos,
+                    "impressions": inputs.get("impressions"),
+                    "ctr": inputs.get("ctr"),
+                    "action_hint": _hint(pos),
+                }
+            )
 
     since = date.today() - timedelta(days=30)
-    rewrites = [
+    declining = [
         _row(a, "keyword", "url", "detected_date", "severity",
              "from_position", "to_position")
         for a in session.scalars(
@@ -215,8 +230,12 @@ def recommendations(domain_id: int, session: Session = Depends(db)) -> dict:
     return {
         "domain_id": domain_id,
         "keyword_threshold": d.keyword_threshold,
-        "new_article_ideas": ideas,
-        "rewrite_candidates": rewrites,
+        "note": (
+            "改善候補は GSC で既にインプレッションのあるクエリ（＝既存ページの伸びしろ）。"
+            "完全に新しいテーマの提案にはキーワード調査が必要で、これは未実装。"
+        ),
+        "improvement_candidates": improvements,
+        "declining": declining,
     }
 
 
