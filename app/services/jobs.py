@@ -53,17 +53,24 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def run_job(job_id: str) -> dict:
+def run_job(job_id: str, account_id: int | None = None) -> dict:
     """Run one job to completion. Returns its final state
-    ``{status, result, error, llm_cost_usd}`` (also persisted on the row)."""
-    with SessionLocal() as bootstrap:
-        row = bootstrap.get(m.Job, job_id)
-        if row is None:
-            return {"status": "missing", "result": None, "error": "job not found",
-                    "llm_cost_usd": 0.0}
-        account_id = row.account_id
+    ``{status, result, error, llm_cost_usd}`` (also persisted on the row).
 
-    with tenant_session(account_id) as s:
+    ``account_id`` should be passed by the caller (it already knows it) — the
+    jobs table is RLS-guarded, so a lookup without the tenant GUC set sees
+    nothing. It is only inferred (superuser-style, dev/SQLite) when omitted.
+    """
+    if account_id is None:
+        with SessionLocal() as bootstrap:
+            row = bootstrap.get(m.Job, job_id)
+            if row is None:
+                return {"status": "missing", "result": None,
+                        "error": "job not found (account_id not supplied)",
+                        "llm_cost_usd": 0.0}
+            account_id = row.account_id
+
+    with tenant_session(int(account_id)) as s:
         job = s.get(m.Job, job_id)
         if job is None or job.status not in ("queued", "running"):
             return {"status": getattr(job, "status", "gone"),

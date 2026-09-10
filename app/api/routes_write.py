@@ -246,13 +246,14 @@ def create_job(
         created_by=user_id,
     )
     job_id = job.id
+    account_id = _aid(session)
     session.commit()  # persist before run_job opens its own session
 
     if body.params.get("_async"):
-        background.add_task(jobsvc.run_job, job_id)
+        background.add_task(jobsvc.run_job, job_id, account_id)
         return {"job_id": job_id, "status": "queued"}
 
-    final = jobsvc.run_job(job_id)  # blocks until done; opens its own session
+    final = jobsvc.run_job(job_id, account_id)  # blocks until done; own session
     return {"job_id": job_id, **final}
 
 
