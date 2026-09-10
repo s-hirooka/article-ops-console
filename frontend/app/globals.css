@@ -55,3 +55,65 @@ a {
 .monaco-editor .overflow-guard {
   border-radius: 8px;
 }
+
+/* Rendered article body (our own generated HTML) */
+.prose {
+  line-height: 1.75;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.prose h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 1.4em 0 0.6em;
+}
+.prose h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 1.6em 0 0.5em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid var(--border);
+}
+.prose h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 1.3em 0 0.4em;
+}
+.prose p {
+  margin: 0.7em 0;
+}
+.prose ul,
+.prose ol {
+  margin: 0.7em 0;
+  padding-left: 1.4em;
+  list-style: revert;
+}
+.prose li {
+  margin: 0.3em 0;
+}
+.prose a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  font-size: 0.92em;
+}
+.prose th,
+.prose td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.prose th {
+  background: var(--surface-2);
+}
+.prose img {
+  height: auto;
+  border-radius: 6px;
+}
+.prose figure {
+  margin: 1em 0;
+}

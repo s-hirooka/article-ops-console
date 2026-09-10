@@ -64,6 +64,17 @@ export interface Article {
   published_at: string | null;
 }
 
+export interface ArticleDetail extends Article {
+  domain_id: number;
+  updated_at: string | null;
+  body_html: string | null;
+  meta_description: string | null;
+  outline: string[];
+  warnings: string[];
+  wp_link: string | null;
+  faked: boolean | null;
+}
+
 export interface Job {
   id: string;
   kind: string;

@@ -97,6 +97,13 @@ export const api = {
     req<Opportunity[]>(`/api/domains/${id}/opportunities?limit=${limit}`),
   alerts: (id: number, days = 30) => req<Alert[]>(`/api/domains/${id}/alerts?days=${days}`),
   articles: (id: number) => req<Article[]>(`/api/domains/${id}/articles`),
+  article: (articleId: number) =>
+    req<import("./types").ArticleDetail>(`/api/articles/${articleId}`),
+  deleteArticle: (articleId: number, trashWp = false) =>
+    req<{ deleted: boolean; wp_action: string; warnings: string[] }>(
+      `/api/articles/${articleId}?trash_wp=${trashWp}`,
+      { method: "DELETE" },
+    ),
   recommendations: (id: number) =>
     req<Recommendations>(`/api/domains/${id}/recommendations`),
   topicIdeas: (

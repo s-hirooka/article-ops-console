@@ -310,6 +310,27 @@ def publish_article_endpoint(
         raise HTTPException(422, str(exc))
 
 
+@router.delete("/articles/{article_id}")
+def delete_article_endpoint(
+    article_id: int,
+    trash_wp: bool = False,
+    session: Session = Depends(db),
+) -> dict:
+    """記事を削除。WordPress 投稿がある場合、既定では下書きに戻し、
+    ``?trash_wp=true`` ならゴミ箱へ移動する。"""
+    from app.services.publish import PublishError, delete_article
+
+    try:
+        return delete_article(
+            session,
+            account_id=_aid(session),
+            article_id=article_id,
+            trash_wp=trash_wp,
+        )
+    except PublishError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str, session: Session = Depends(db)) -> dict:
     j = session.get(m.Job, job_id)

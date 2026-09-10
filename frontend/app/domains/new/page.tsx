@@ -14,7 +14,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtUsd } from "@/lib/format";
-import type { Article, DomainDetail } from "@/lib/types";
+import type { DomainDetail } from "@/lib/types";
 
 type GenResult = {
   article_id?: number;
@@ -50,29 +50,15 @@ function NewArticleInner() {
   const [result, setResult] = useState<GenResult | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const [article, setArticle] = useState<Article | null>(null);
-  const [publishing, setPublishing] = useState(false);
-  const [publishMsg, setPublishMsg] = useState<string | null>(null);
-
   useEffect(() => {
-    if (!domainId) return;
-    api.domain(domainId).then(setD).catch(() => setD(null));
-    const aId = sp.get("article");
-    if (aId) {
-      api
-        .articles(domainId)
-        .then((rows) => setArticle(rows.find((r) => r.id === Number(aId)) ?? null))
-        .catch(() => {});
-    }
-  }, [domainId, sp]);
+    if (domainId) api.domain(domainId).then(setD).catch(() => setD(null));
+  }, [domainId]);
 
   async function generate() {
     if (!domainId) return;
     setRunning(true);
     setFailed(null);
     setResult(null);
-    setArticle(null);
-    setPublishMsg(null);
     try {
       const params: Record<string, unknown> = { target_keyword: keyword.trim() };
       if (volume.trim()) params.search_volume = Number(volume);
@@ -81,11 +67,6 @@ function NewArticleInner() {
       const r = await api.runJob({ kind: "article_generate", domain_id: domainId, params });
       if (r.status === "succeeded") {
         setResult((r.result as GenResult) ?? {});
-        const aid = (r.result as GenResult)?.article_id;
-        if (aid) {
-          const rows = await api.articles(domainId);
-          setArticle(rows.find((x) => x.id === aid) ?? null);
-        }
       } else {
         setFailed(r.error || `ジョブが ${r.status} で終了しました`);
       }
@@ -93,26 +74,6 @@ function NewArticleInner() {
       setFailed((e as Error).message);
     } finally {
       setRunning(false);
-    }
-  }
-
-  async function publish() {
-    if (!article) return;
-    setPublishing(true);
-    setPublishMsg(null);
-    try {
-      const r = await api.publish(article.id, "publish");
-      setPublishMsg(
-        `公開しました（wp_post_id ${r.wp_post_id}）` +
-          (r.link ? ` — ${r.link}` : "") +
-          (r.warnings?.length ? ` / 注意: ${r.warnings.join(" ")}` : ""),
-      );
-      const rows = await api.articles(domainId);
-      setArticle(rows.find((x) => x.id === article.id) ?? article);
-    } catch (e) {
-      setPublishMsg(`公開に失敗: ${(e as Error).message}`);
-    } finally {
-      setPublishing(false);
     }
   }
 
@@ -207,31 +168,16 @@ function NewArticleInner() {
                 ))}
               </ul>
             )}
-          </Card>
-        </>
-      )}
-
-      {article && (
-        <>
-          <SectionTitle>WordPress 公開</SectionTitle>
-          <Card className="flex flex-col gap-3">
-            <div className="text-[13px]">
-              状態 <b>{article.status}</b>
-              {article.wp_post_id ? ` · 投稿ID ${article.wp_post_id}` : ""}
-            </div>
-            <div>
-              <Button
-                onClick={publish}
-                disabled={publishing || article.status === "published"}
-              >
-                {publishing
-                  ? "公開中…"
-                  : article.status === "published"
-                    ? "公開済み"
-                    : "WordPress に公開"}
-              </Button>
-            </div>
-            {publishMsg && <div className="text-[12px] text-ink2">{publishMsg}</div>}
+            {result.article_id && (
+              <div className="mt-1">
+                <Link
+                  href={`/articles?id=${result.article_id}`}
+                  className="text-[13px] text-accent hover:underline"
+                >
+                  本文を確認 → 公開 / 下書き保存 / 削除 →
+                </Link>
+              </div>
+            )}
           </Card>
         </>
       )}

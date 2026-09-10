@@ -243,7 +243,6 @@ function DomainInner() {
               <Th>タイトル</Th>
               <Th>対象KW</Th>
               <Th num>検索数</Th>
-              <Th num>投稿ID</Th>
               <Th num>作成</Th>
             </tr>
           </thead>
@@ -261,7 +260,7 @@ function DomainInner() {
                 </Td>
                 <Td>
                   <Link
-                    href={`/domains/new?id=${domainId}&article=${a.id}`}
+                    href={`/articles?id=${a.id}`}
                     className="text-accent hover:underline"
                   >
                     {a.title || "（無題）"}
@@ -269,7 +268,6 @@ function DomainInner() {
                 </Td>
                 <Td>{a.target_keyword || "—"}</Td>
                 <Td num>{a.target_search_volume ?? "—"}</Td>
-                <Td num>{a.wp_post_id ?? "—"}</Td>
                 <Td num>{fmtDate(a.created_at)}</Td>
               </tr>
             ))}

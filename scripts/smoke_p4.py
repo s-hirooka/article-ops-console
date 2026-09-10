@@ -85,6 +85,18 @@ def main() -> int:
     art_id = c.get(f"/api/jobs/{jid}").json()["result"]["article_id"]
     check("article generated", isinstance(art_id, int))
 
+    ad = c.get(f"/api/articles/{art_id}", headers=H)
+    check("GET /api/articles/{id} -> 200", ad.status_code == 200, ad.text)
+    adj = ad.json()
+    check("  body_html present", bool(adj.get("body_html")))
+    check("  meta_description present", adj.get("meta_description") is not None)
+    check("  domain_id present", adj.get("domain_id") == 1)
+
+    r = c.post(f"/api/articles/{art_id}/publish", headers=H, json={"status": "draft"})
+    check("publish status=draft -> 200", r.status_code == 200, r.text)
+    a = next(x for x in c.get("/api/domains/1/articles").json() if x["id"] == art_id)
+    check("  article back to 'draft'", a["status"] == "draft", str(a))
+
     r = c.post(f"/api/articles/{art_id}/publish", headers=H, json={"status": "publish"})
     check("POST publish -> 200", r.status_code == 200, r.text)
     pub = r.json()
@@ -142,6 +154,17 @@ def main() -> int:
         "params": {"title": "すきま収納アイデア", "style": {"preset": "navy_check"}}})
     j = c.get(f"/api/jobs/{r.json()['job_id']}").json()
     check("eyecatch job produced bytes", (j["result"] or {}).get("bytes", 0) > 2000, str(j))
+
+    # --- delete an article --------------------------------------------
+    r = c.post("/api/jobs", headers=H, json={
+        "kind": "article_generate", "domain_id": 1,
+        "params": {"target_keyword": "消す 記事", "search_volume": 900, "force": True}})
+    del_id = c.get(f"/api/jobs/{r.json()['job_id']}").json()["result"]["article_id"]
+    r = c.delete(f"/api/articles/{del_id}", headers=H)
+    check("DELETE /api/articles/{id} -> 200", r.status_code == 200 and r.json()["deleted"], r.text)
+    check("  article gone (404)", c.get(f"/api/articles/{del_id}", headers=H).status_code == 404)
+    check("  not in domain list",
+          all(x["id"] != del_id for x in c.get("/api/domains/1/articles").json()))
 
     # --- oauth status (not connected) --------------------------------
     r = c.get("/api/oauth/google/status")

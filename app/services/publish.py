@@ -118,3 +118,45 @@ def publish_article(
         "eyecatch_url": art.eyecatch_url,
         "warnings": meta.get("warnings", []),
     }
+
+
+def delete_article(
+    session: Session,
+    *,
+    account_id: int,
+    article_id: int,
+    trash_wp: bool = False,
+) -> dict:
+    """Delete the local article row. If it has a WordPress post: move that post
+    to draft by default, or to the trash when ``trash_wp`` is set."""
+    art = session.get(m.Article, article_id)
+    if art is None or art.account_id != account_id:
+        raise PublishError("article が見つかりません。")
+
+    wp_action = "none"
+    warnings: list[str] = []
+    if art.wp_post_id:
+        domain = session.get(m.Domain, art.domain_id)
+        try:
+            client = WordPressClient(_creds(domain)) if domain else None
+            if client is None:
+                warnings.append("domain 不明のため WordPress 側は未変更。")
+            elif trash_wp:
+                client.trash_post(art.wp_post_id)
+                wp_action = "trashed"
+            else:
+                client.update_post(art.wp_post_id, status="draft")
+                wp_action = "set_to_draft"
+        except (PublishError, WordPressError) as exc:
+            warnings.append(f"WordPress 側の処理に失敗（投稿は残っています）: {exc}")
+
+    wp_post_id = art.wp_post_id
+    session.delete(art)
+    session.flush()
+    return {
+        "deleted": True,
+        "article_id": article_id,
+        "wp_post_id": wp_post_id,
+        "wp_action": wp_action,
+        "warnings": warnings,
+    }

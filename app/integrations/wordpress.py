@@ -102,6 +102,12 @@ class WordPressClient:
         q = f"?_fields={','.join(fields)}" if fields else ""
         return self._request("GET", f"/wp-json/wp/v2/posts/{post_id}{q}")
 
+    def trash_post(self, post_id: int) -> dict:
+        """Move a post to the trash (recoverable). Not a permanent delete."""
+        if _fake():
+            return {"id": post_id, "status": "trash"}
+        return self._request("DELETE", f"/wp-json/wp/v2/posts/{post_id}")
+
     # --- media -----------------------------------------------------------
     def upload_media_bytes(self, data: bytes, filename: str,
                            content_type: str = "image/png") -> dict:

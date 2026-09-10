@@ -159,6 +159,25 @@ def articles(domain_id: int, session: Session = Depends(db)) -> list[dict]:
     ]
 
 
+@router.get("/articles/{article_id}")
+def get_article(article_id: int, session: Session = Depends(db)) -> dict:
+    a = session.get(m.Article, article_id)
+    if a is None or a.account_id != _aid(session):
+        raise HTTPException(404, "article が見つかりません。")
+    meta = a.meta_json or {}
+    return {
+        **_row(a, "id", "domain_id", "status", "title", "slug", "wp_post_id",
+               "target_keyword", "target_search_volume", "eyecatch_url",
+               "created_at", "updated_at", "published_at"),
+        "body_html": a.body_html,
+        "meta_description": meta.get("meta_description"),
+        "outline": meta.get("outline", []),
+        "warnings": meta.get("warnings", []),
+        "wp_link": meta.get("wp_link"),
+        "faked": meta.get("faked"),
+    }
+
+
 @router.get("/domains/{domain_id}/recommendations")
 def recommendations(domain_id: int, session: Session = Depends(db)) -> dict:
     """「次の打ち手」— computed, read-only.
