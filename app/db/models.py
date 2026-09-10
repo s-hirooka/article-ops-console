@@ -16,9 +16,9 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     Numeric,
-    String,
     Text,
     UniqueConstraint,
+    Uuid,
 )
 from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import JSONB
@@ -31,6 +31,9 @@ TS = TIMESTAMP(timezone=True)
 # BigInteger identity PK on Postgres; plain INTEGER rowid on SQLite so local
 # smoke tests get autoincrement.
 BigPK = BigInteger().with_variant(Integer, "sqlite")
+# Native `uuid` on Postgres (matches the 0001 migration), CHAR(32) on SQLite.
+# as_uuid=False keeps the Python value a str so callers pass str(uuid4()).
+JobId = Uuid(as_uuid=False)
 
 
 class Base(DeclarativeBase):
@@ -160,7 +163,7 @@ class DomainPrompt(Base):
 class Job(Base):
     __tablename__ = "jobs"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(JobId, primary_key=True)
     account_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
     )
@@ -191,7 +194,7 @@ class Article(Base):
     domain_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("domains.id", ondelete="CASCADE"), nullable=False
     )
-    job_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("jobs.id", ondelete="SET NULL"))
+    job_id: Mapped[str | None] = mapped_column(JobId, ForeignKey("jobs.id", ondelete="SET NULL"))
     wp_post_id: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
     target_keyword: Mapped[str | None] = mapped_column(Text)
@@ -216,7 +219,7 @@ class LlmUsage(Base):
     domain_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("domains.id", ondelete="SET NULL")
     )
-    job_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("jobs.id", ondelete="SET NULL"))
+    job_id: Mapped[str | None] = mapped_column(JobId, ForeignKey("jobs.id", ondelete="SET NULL"))
     model: Mapped[str] = mapped_column(Text, nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
