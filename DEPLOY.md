@@ -186,6 +186,10 @@ export APP_ENCRYPTION_KEY="手順4の鍵"
 # 7-1. 既存2ドメイン（Sites）を accounts/domains に取り込み  ← 実施済み
 python scripts/seed_from_sites.py --owner-email s.hirooka.ceo@gmail.com
 
+# 7-1b. ドメイン別の記事生成プロンプト（8コンポーネント）を投入  ← 実施済み
+#       以後の編集は画面（/domains/prompts）で。保存するたび新バージョン。
+python scripts/seed_domain_prompts.py
+
 # 7-2. ドメインごとに WordPress 認証情報を登録  ← あなたが実施
 python scripts/set_domain_secret.py --domain lifehouse2026 \
   --wp-base-url https://lifehouse2026.com --wp-username <WPユーザー名> \
