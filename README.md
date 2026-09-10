@@ -31,9 +31,9 @@ first.
 | Seed from existing `Sites` (`scripts/seed_from_sites.py`) | ✅ |
 | End-to-end smoke on throwaway SQLite (`scripts/smoke_api.py`) | ✅ **PASS** — 14 checks + tenant isolation |
 
-**Deploy blockers (need you):** create Neon (Postgres) + Render accounts, a
-Google Cloud *Web* OAuth client, then set env vars per `render.yaml` and
-`git push`.
+**Deploy:** step-by-step in [`DEPLOY.md`](DEPLOY.md) (手順1〜8). Needs you to
+create GitHub + Neon + Render accounts and a Google Cloud *Web* OAuth client;
+everything else is scripted.
 
 ## Status — P3: 「記事ウィザード + プロンプト編集 + アカウント運用」
 
