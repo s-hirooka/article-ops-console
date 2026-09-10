@@ -42,7 +42,7 @@ function NewArticleInner() {
 
   const [d, setD] = useState<DomainDetail | null>(null);
   const [keyword, setKeyword] = useState(sp.get("keyword") ?? "");
-  const [volume, setVolume] = useState("");
+  const [volume, setVolume] = useState((sp.get("volume") ?? "").replace(/[^0-9]/g, ""));
   const [force, setForce] = useState(false);
   const [extra, setExtra] = useState("");
 

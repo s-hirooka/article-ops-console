@@ -65,7 +65,13 @@ export default function Dashboard() {
               <div className="mt-3 flex gap-6">
                 <Stat value={d.keyword_threshold} label="検索数の下限" />
               </div>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
+                <Link
+                  href={`/domains/topics?id=${d.id}`}
+                  className="text-[12px] text-accent hover:underline"
+                >
+                  🔎 テーマ探索
+                </Link>
                 <Link
                   href={`/domains/new?id=${d.id}`}
                   className="text-[12px] text-accent hover:underline"

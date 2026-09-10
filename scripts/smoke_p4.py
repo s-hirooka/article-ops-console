@@ -25,6 +25,7 @@ os.environ.update(
     LLM_FAKE="1",
     WP_FAKE="1",
     GSC_FAKE="1",
+    GADS_FAKE="1",
 )
 
 _fail = 0
@@ -119,6 +120,21 @@ def main() -> int:
 
     rec = c.get("/api/domains/1/recommendations").json()
     check("recommendations computed", "improvement_candidates" in rec and "declining" in rec)
+
+    # --- topic ideas (新規テーマ) ----------------------------------
+    r = c.post("/api/domains/1/topic-ideas", headers=H, json={"seeds": ["すきま収納"], "limit": 10})
+    check("topic-ideas -> 200", r.status_code == 200, r.text)
+    ti = r.json()
+    kws = [x["keyword"] for x in ti["candidates"]]
+    norm = [k.replace(" ", "") for k in kws]
+    check("  candidates present", len(kws) >= 2, str(kws))
+    check("  permutations deduped", sum(1 for n in norm if "収納アイデア" in n) <= 1, str(kws))
+    check("  below-threshold excluded", not any("低予算" in k for k in kws))
+    check("  already-ranked excluded (収納アイデア in GSC fake)", "収納アイデア" not in norm, str(kws))
+    check("  api_usage recorded", any(
+        u["provider"] == "google_ads" and u["operation"] == "keyword_ideas"
+        for u in c.get("/api/usage/api").json()
+    ))
 
     # --- eyecatch job -----------------------------------------------
     r = c.post("/api/jobs", headers=H, json={

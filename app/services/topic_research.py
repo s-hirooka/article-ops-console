@@ -1,0 +1,172 @@
+"""Discover genuinely new article topics for a domain.
+
+GSC only surfaces queries a page already ranks for. To find *uncovered* topics
+we expand seed terms via Google Ads' GenerateKeywordIdeas, then subtract:
+  * keywords the domain already ranks for (keyword_rank_history)
+  * keywords an existing/queued article already targets (articles.target_keyword)
+and keep those clearing the domain's monthly-search threshold.
+
+One Google Ads API call per run; recorded in api_usage.
+"""
+from __future__ import annotations
+
+import re
+import unicodedata
+from datetime import date
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db import models as m
+from app.integrations.google_ads_keywords import generate_keyword_ideas
+
+
+_PARTICLES = {"の", "を", "に", "は", "が", "で", "と", "も", "や", "へ", "から", "まで"}
+
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFKC", s or "")
+    return re.sub(r"\s+", "", s).lower()
+
+
+def _token_key(s: str) -> frozenset[str]:
+    """Order-independent identity: {一人暮らし, 食器, 収納} for every word-order
+    permutation, so Google Ads' near-duplicate ideas collapse to one."""
+    s = unicodedata.normalize("NFKC", s or "").lower()
+    toks = [t for t in re.split(r"\s+", s) if t and t not in _PARTICLES]
+    return frozenset(toks) if toks else frozenset([_norm(s)])
+
+
+def _covered_raw(session: Session, account_id: int, domain_id: int) -> list[str]:
+    """Every keyword the domain already ranks for (GSC) or has targeted."""
+    out = [
+        k
+        for (k,) in session.execute(
+            select(m.KeywordRankHistory.keyword.distinct()).where(
+                m.KeywordRankHistory.domain_id == domain_id
+            )
+        ).all()
+        if k
+    ]
+    out += [
+        k
+        for (k,) in session.execute(
+            select(m.Article.target_keyword.distinct()).where(
+                m.Article.domain_id == domain_id,
+                m.Article.target_keyword.is_not(None),
+            )
+        ).all()
+        if k
+    ]
+    return out
+
+
+
+
+def _derive_seeds(session: Session, domain_id: int, domain_key: str) -> list[str]:
+    rows = session.execute(
+        select(
+            m.KeywordRankHistory.keyword,
+            func.sum(m.KeywordRankHistory.impressions).label("imp"),
+        )
+        .where(m.KeywordRankHistory.domain_id == domain_id)
+        .group_by(m.KeywordRankHistory.keyword)
+        .order_by(func.sum(m.KeywordRankHistory.impressions).desc())
+        .limit(8)
+    ).all()
+    seeds = [k for k, _ in rows if k]
+    if not seeds:
+        seeds = [domain_key.replace("-", " ")]
+    return seeds
+
+
+def discover(
+    session: Session,
+    *,
+    account_id: int,
+    domain_id: int,
+    seeds: list[str] | None = None,
+    page_url: str | None = None,
+    limit: int = 25,
+) -> dict:
+    domain = session.get(m.Domain, domain_id)
+    if domain is None or domain.account_id != account_id:
+        raise ValueError("domain が見つかりません。")
+
+    seeds = [s.strip() for s in (seeds or []) if s.strip()]
+    if not seeds and not page_url:
+        seeds = _derive_seeds(session, domain_id, domain.domain_key)
+
+    ideas = generate_keyword_ideas(seeds, page_url=page_url, limit=400)
+
+    covered_raw = _covered_raw(session, account_id, domain_id)
+    covered = {_norm(k) for k in covered_raw}
+    covered_keys = {_token_key(k) for k in covered_raw}
+    threshold = domain.keyword_threshold
+
+    # keep the best (highest-volume) idea per order-independent token set
+    best: dict[frozenset[str], dict] = {}
+    for idea in ideas:
+        vol = idea.avg_monthly_searches or 0
+        if vol < threshold:
+            continue
+        nk = _norm(idea.keyword)
+        key = _token_key(idea.keyword)
+        # already ranking / already targeted: exact term, or the same set of
+        # significant tokens (word-order / particle variants).
+        if not nk or nk in covered or key in covered_keys:
+            continue
+        cur = best.get(key)
+        if cur is None or vol > (cur["avg_monthly_searches"] or 0):
+            best[key] = {
+                "keyword": idea.keyword,
+                "avg_monthly_searches": idea.avg_monthly_searches,
+                "competition_level": idea.competition_level,
+                "competition_index": idea.competition_index,
+            }
+
+    candidates = sorted(
+        best.values(),
+        key=lambda c: (
+            -(c["avg_monthly_searches"] or 0),
+            c["competition_index"] if c["competition_index"] is not None else 50,
+        ),
+    )[:limit]
+
+    _record_api_usage(session, account_id, len(ideas))
+
+    return {
+        "domain_id": domain_id,
+        "seeds_used": seeds,
+        "threshold": threshold,
+        "ideas_returned": len(ideas),
+        "covered_keywords": len(covered),
+        "candidates": candidates,
+    }
+
+
+def _record_api_usage(session: Session, account_id: int, idea_count: int) -> None:
+    today = date.today()  # match /api/usage/api (routes_read.usage_api)
+    row = session.scalar(
+        select(m.ApiUsage).where(
+            m.ApiUsage.account_id == account_id,
+            m.ApiUsage.provider == "google_ads",
+            m.ApiUsage.operation == "keyword_ideas",
+            m.ApiUsage.usage_date == today,
+        )
+    )
+    if row:
+        row.call_count += 1
+        row.meta_json = {**(row.meta_json or {}), "last_idea_count": idea_count}
+    else:
+        session.add(
+            m.ApiUsage(
+                account_id=account_id,
+                provider="google_ads",
+                operation="keyword_ideas",
+                call_count=1,
+                usage_date=today,
+                meta_json={"last_idea_count": idea_count},
+            )
+        )
+    session.flush()

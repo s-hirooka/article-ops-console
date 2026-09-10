@@ -88,7 +88,13 @@ function DomainInner() {
           <Stat value={d.has_wp_credentials ? "あり" : "なし"} label="WP認証" />
           <Stat value={d.has_own_anthropic_key ? "専用" : "共有"} label="APIキー" />
         </div>
-        <div className="mt-3 flex gap-3 text-[13px]">
+        <div className="mt-3 flex flex-wrap gap-3 text-[13px]">
+          <Link
+            href={`/domains/topics?id=${domainId}`}
+            className="text-accent hover:underline"
+          >
+            🔎 新規テーマを探す
+          </Link>
           <Link
             href={`/domains/new?id=${domainId}`}
             className="text-accent hover:underline"

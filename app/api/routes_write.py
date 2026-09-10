@@ -257,6 +257,36 @@ def create_job(
     return {"job_id": job_id, **final}
 
 
+class TopicIdeasIn(BaseModel):
+    seeds: list[str] = Field(default_factory=list)
+    page_url: str | None = None
+    limit: int = Field(default=25, ge=5, le=50)
+
+
+@router.post("/domains/{domain_id}/topic-ideas")
+def topic_ideas(
+    domain_id: int,
+    body: TopicIdeasIn | None = None,
+    session: Session = Depends(db),
+) -> dict:
+    """新規テーマ探索: Google Ads のキーワードアイデアを、既にランク済み /
+    記事化済みのキーワードで除外して返す。Google Ads API を1回消費する。"""
+    _guard_domain(session, domain_id)
+    from app.services.topic_research import discover
+
+    try:
+        return discover(
+            session,
+            account_id=_aid(session),
+            domain_id=domain_id,
+            seeds=(body.seeds if body else []),
+            page_url=(body.page_url if body else None),
+            limit=(body.limit if body else 25),
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(422, str(exc))
+
+
 class PublishIn(BaseModel):
     status: str = Field(default="publish", pattern="^(publish|draft)$")
 

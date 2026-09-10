@@ -164,6 +164,112 @@ def fetch_historical_metrics(
     return rows
 
 
+@dataclass(frozen=True)
+class KeywordIdea:
+    keyword: str
+    avg_monthly_searches: int | None
+    competition_level: str | None
+    competition_index: int | None
+
+
+def generate_keyword_ideas(
+    seeds: list[str],
+    settings: GoogleAdsSettings | None = None,
+    customer_id: str | None = None,
+    page_url: str | None = None,
+    limit: int = 200,
+) -> list[KeywordIdea]:
+    """KeywordPlanIdeaService.GenerateKeywordIdeas — expand seed terms (and/or a
+    page URL) into related keyword ideas with search volume + competition.
+
+    One API call regardless of how many ideas come back.
+    """
+    seeds = [k for k in (kw.strip() for kw in seeds) if k][:20]
+    if not seeds and not page_url:
+        raise ValueError("シード（キーワード or URL）が必要です。")
+
+    import os
+
+    if os.environ.get("GADS_FAKE") == "1":
+        return _fake_ideas(seeds or [page_url or ""])
+
+    s = settings or GoogleAdsSettings.from_env()
+    cid = "".join(ch for ch in (customer_id or s.default_customer_id) if ch.isdigit())
+    if not cid:
+        raise GoogleAdsCredentialError("Customer ID が未指定です。")
+
+    client = _build_client(s)
+    svc = client.get_service("KeywordPlanIdeaService")
+    net = client.enums.KeywordPlanNetworkEnum.GOOGLE_SEARCH
+
+    request = client.get_type("GenerateKeywordIdeasRequest")
+    request.customer_id = cid
+    request.language = f"languageConstants/{s.language_id}"
+    request.geo_target_constants.extend(
+        f"geoTargetConstants/{gid}" for gid in s.geo_target_ids
+    )
+    request.keyword_plan_network = net
+    request.include_adult_keywords = False
+    if seeds and page_url:
+        request.keyword_and_url_seed.url = page_url
+        request.keyword_and_url_seed.keywords.extend(seeds)
+    elif page_url:
+        request.url_seed.url = page_url
+    else:
+        request.keyword_seed.keywords.extend(seeds)
+
+    response = svc.generate_keyword_ideas(request=request)
+
+    out: list[KeywordIdea] = []
+    for r in response:
+        m = r.keyword_idea_metrics
+        has = "keyword_idea_metrics" in r
+        out.append(
+            KeywordIdea(
+                keyword=r.text or "",
+                avg_monthly_searches=(
+                    int(m.avg_monthly_searches)
+                    if has and "avg_monthly_searches" in m
+                    else None
+                ),
+                competition_level=(
+                    m.competition.name
+                    if has and hasattr(m.competition, "name")
+                    else (str(m.competition) if has else None)
+                ),
+                competition_index=(
+                    int(m.competition_index)
+                    if has and "competition_index" in m
+                    else None
+                ),
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _fake_ideas(seeds: list[str]) -> list[KeywordIdea]:
+    """Deterministic stand-in for GenerateKeywordIdeas (GADS_FAKE=1)."""
+    base = (seeds[0] if seeds else "テスト").split()
+    head = base[0] if base else "テスト"
+    rows = [
+        (f"{head} 収納 アイデア", 2400, "HIGH", 92),
+        (f"収納 アイデア {head}", 2400, "HIGH", 92),          # permutation dup
+        (f"{head} の 収納 アイデア", 2200, "HIGH", 90),        # particle dup
+        (f"{head} すきま 収納", 1300, "MEDIUM", 55),
+        (f"{head} 本棚", 900, "HIGH", 99),
+        (f"{head} 低予算", 320, "LOW", 12),                   # below threshold
+        ("収納 アイデア", 1600, "HIGH", 88),
+    ]
+    return [
+        KeywordIdea(
+            keyword=k, avg_monthly_searches=v, competition_level=c, competition_index=i
+        )
+        for k, v, c, i in rows
+    ]
+
+
 def to_tsv(rows: list[KeywordMetricRow]) -> str:
     """Same columns/order the .exe prints, for eyeball diffing."""
     out = ["Keyword\tAvgMonthlySearches\tCompetitionLevel\tCompetitionIndex\tLowBid\tHighBid"]

@@ -10,6 +10,7 @@ import type {
   PromptComponent,
   RankRow,
   Recommendations,
+  TopicIdeas,
   UsageLlm,
 } from "./types";
 
@@ -98,6 +99,10 @@ export const api = {
   articles: (id: number) => req<Article[]>(`/api/domains/${id}/articles`),
   recommendations: (id: number) =>
     req<Recommendations>(`/api/domains/${id}/recommendations`),
+  topicIdeas: (
+    id: number,
+    body: { seeds?: string[]; page_url?: string; limit?: number } = {},
+  ) => req<TopicIdeas>(`/api/domains/${id}/topic-ideas`, { method: "POST", json: body }),
 
   prompts: (id: number) => req<Record<string, PromptComponent>>(`/api/domains/${id}/prompts`),
   promptHistory: (id: number, component: string) =>
