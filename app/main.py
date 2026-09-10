@@ -3,12 +3,16 @@
     uvicorn app.main:app --reload            # local
     uvicorn app.main:app --host 0.0.0.0 --port $PORT   # Render
 
-P2 scope: read-only API + server-rendered dashboard. Writes (article wizard,
-prompt editing, job triggering) arrive in P3.
+Serves the read/write API, the Google OAuth flow, and the server-rendered
+holding dashboard. The Next.js frontend (P5) is a separate origin and calls
+this API cross-origin — hence CORS below (set CORS_ORIGINS to the Vercel URL).
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -23,8 +27,20 @@ _settings = AppSettings.from_env()
 
 app = FastAPI(
     title=_settings.app_name,
-    version="0.2.0",
-    description="AI 記事作成 / SEO 解析パイプラインの運用コンソール（P2: 読み取り専用）",
+    version="0.5.0",
+    description="AI 記事作成 / SEO 解析パイプラインの運用コンソール",
+)
+
+# CORS_ORIGINS: comma-separated exact origins (e.g. https://xxx.vercel.app).
+# Falls back to allowing any localhost port + *.vercel.app for convenience.
+_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins or ["http://localhost:3000"],
+    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+",
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=False,
 )
 
 app.include_router(read_router)
