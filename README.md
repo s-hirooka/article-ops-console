@@ -1,12 +1,46 @@
 # Article Ops Console
 
-Web app to run and monitor the AI article-creation / SEO-analysis pipeline for
-multiple WordPress domains, from any computer. Spec (living doc):
-<https://claude.ai/code/artifact/4264f415-3aff-4a8e-a941-fc43d272b76b>
+複数のWordPressサイトに対して、
+SEO分析・AI記事生成・WordPress公開・Search Console分析を
+一元管理するためのAI業務自動化Webアプリです。
 
-Architecture 案3 — **full cloud**, no Windows dependencies. FastAPI backend
-(wraps RankPulse) + Next.js frontend, Postgres (Neon), on Render's free tier
-first.
+## What it solves
+
+- キーワード調査の自動化
+- SEO分析から記事生成までの効率化
+- WordPressへの記事公開自動化
+- 複数サイトの一元管理
+- AI利用コストの予算管理
+
+## Tech Stack
+
+- Backend: Python / FastAPI / SQLAlchemy
+- Frontend: Next.js / Tailwind
+- Database: PostgreSQL / Neon
+- AI: Anthropic Claude API
+- APIs: Google Ads API / Search Console API / WordPress REST API
+- Infra: Render / GitHub Actions
+
+## AI / Automation Architecture
+
+Google Ads / GSC
+→ keyword analysis
+→ opportunity scoring
+→ Claude draft generation
+→ cost / budget control
+→ eyecatch generation
+→ WordPress publishing
+→ rank monitoring
+→ improvement recommendations
+
+Spec (living doc):
+https://claude.ai/code/artifact/4264f415-3aff-4a8e-a941-fc43d272b76b
+
+---
+
+## Status — P1: 「Windows依存を外す」
+
+ここから今のREADMEを続ける
 
 ## Status — P1: 「Windows依存を外す」
 
