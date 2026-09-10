@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.config import AppSettings
 from app.db import models as m
@@ -42,6 +42,11 @@ def main() -> int:
     src.close()
 
     with SessionLocal() as s:
+        # domains / domain_prompts are RLS-forced; set the tenant GUC so this
+        # unscoped session can write them (accounts/users/members are exempt).
+        if s.bind.dialect.name == "postgresql":
+            s.execute(text(f"SET app.account_id = '{int(account_id)}'"))
+
         acct = s.get(m.Account, account_id)
         if acct is None:
             acct = m.Account(id=account_id, name=args.account_name)

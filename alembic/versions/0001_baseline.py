@@ -32,13 +32,18 @@ _SQL = (
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS citext"))
         # the .sql file wraps itself in BEGIN/COMMIT; alembic already opened a
         # transaction, so strip the outer BEGIN/COMMIT and let alembic own it.
         raw = _SQL.read_text(encoding="utf-8")
         raw = raw.replace("BEGIN;", "", 1)
         raw = "".join(raw.rsplit("COMMIT;", 1))
-        op.execute(sa.text(raw))
+        # Run through the raw DBAPI cursor, NOT op.execute(sa.text(...)):
+        # SQLAlchemy's text() escapes '%' for the pyformat driver, which would
+        # mangle the RLS DO-block's format('%1$I', ...) calls. psycopg3 sends a
+        # no-parameter string verbatim and accepts multiple statements.
+        cur = bind.connection.cursor()
+        cur.execute("CREATE EXTENSION IF NOT EXISTS citext")
+        cur.execute(raw)
     else:
         Base.metadata.create_all(bind=bind)
 

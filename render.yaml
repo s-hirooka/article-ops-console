@@ -6,7 +6,10 @@ services:
     name: article-ops-console
     runtime: python
     plan: free
-    buildCommand: "pip install -r requirements.txt && alembic upgrade head"
+    # Migrations are run from a workstation with the owner connection string
+    # (the runtime DATABASE_URL below is the non-privileged app_user, which has
+    # no DDL rights). See DEPLOY.md.
+    buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /healthz
     autoDeploy: true

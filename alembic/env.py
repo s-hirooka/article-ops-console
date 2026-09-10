@@ -6,6 +6,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import os
+
 from app.config import AppSettings
 from app.db.models import Base
 
@@ -13,6 +15,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Migrations need DDL rights; the app runtime role (app_user) deliberately has
+# none. Set MIGRATION_DATABASE_URL to the owner connection string when they
+# differ — otherwise DATABASE_URL is used for both.
+_mig = os.environ.get("MIGRATION_DATABASE_URL")
+if _mig:
+    os.environ["DATABASE_URL"] = _mig
 config.set_main_option("sqlalchemy.url", AppSettings.from_env().database_url)
 target_metadata = Base.metadata
 

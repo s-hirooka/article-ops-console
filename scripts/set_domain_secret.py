@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.config import AppSettings
 from app.db import models as m
@@ -45,6 +45,8 @@ def main() -> int:
 
     account_id = AppSettings.from_env().dev_account_id
     with SessionLocal() as s:
+        if s.bind.dialect.name == "postgresql":
+            s.execute(text(f"SET app.account_id = '{int(account_id)}'"))
         d = s.scalar(
             select(m.Domain).where(
                 m.Domain.account_id == account_id,
