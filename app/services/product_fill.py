@@ -10,8 +10,12 @@ emit three token forms wherever a product should appear:
 
 All tokens sharing the same search phrase resolve to the same product (one
 Amazon API call per unique phrase, not per token). A phrase that returns no
-results is left as an HTML comment noting the miss, and the caller can see it
-in `unresolved` to decide whether to block publish.
+results is left as an HTML comment noting the miss (with its token kind, so
+a later retry can render it correctly), and the caller can see it in
+`unresolved` to decide whether to block publish. That marker is itself
+retriable — re-running fill_products (e.g. via the "fill-products" endpoint)
+searches it again rather than treating "not found" as final, since a miss is
+often a transient search failure, not a real absence of the product.
 
 Also understands the older ``<!-- product_slot: 商品カテゴリ="..." ... -->
 <p>[プレースホルダー]</p>`` format (seeded on Neon before this token design
@@ -39,6 +43,13 @@ _LEGACY_RE = re.compile(
     r'<!--\s*product_slot:.*?商品カテゴリ="([^"]*)".*?-->\s*'
     r"<p>\[この商品ブロックは公開前に実在の商品情報に差し替えてください\]</p>",
     re.S,
+)
+# A previous run's "not found" marker. Kept retriable (kind embedded) rather
+# than a dead end — an Amazon search failure is often transient (network
+# blip, cold start), and "再実行" should actually be able to recover it
+# instead of always re-reporting the same miss.
+_NOTFOUND_RE = re.compile(
+    r"<!-- product not found \((TITLE|PRICE|BLOCK)\) for “([^”]+)” -->"
 )
 
 
@@ -68,9 +79,18 @@ def _block_html(p: Product) -> str:
     return img + "\n" + link
 
 
+def _render(kind: str, p: Product) -> str:
+    if kind == "TITLE":
+        return f'<a href="{p.url}" target="_blank" rel="nofollow noopener sponsored">{p.title}</a>'
+    if kind == "PRICE":
+        return _price_text(p)
+    return _block_html(p)  # BLOCK
+
+
 def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
     phrases = {m.group(2).strip() for m in _TOKEN_RE.finditer(html)}
     phrases |= {m.group(1).strip() for m in _LEGACY_RE.finditer(html)}
+    phrases |= {m.group(2).strip() for m in _NOTFOUND_RE.finditer(html)}
     cache: dict[str, Product | None] = {}
     filled: list[str] = []
     unresolved: list[str] = []
@@ -91,22 +111,26 @@ def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
         kind, phrase = m.group(1), m.group(2).strip()
         p = cache.get(phrase)
         if p is None:
-            return f"<!-- product not found for “{phrase}” -->"
-        if kind == "TITLE":
-            return f'<a href="{p.url}" target="_blank" rel="nofollow noopener sponsored">{p.title}</a>'
-        if kind == "PRICE":
-            return _price_text(p)
-        return _block_html(p)  # BLOCK
+            return f"<!-- product not found ({kind}) for “{phrase}” -->"
+        return _render(kind, p)
 
     def _sub_legacy(m: re.Match) -> str:
         phrase = m.group(1).strip()
         p = cache.get(phrase)
         if p is None:
-            return f"<!-- product not found for “{phrase}” -->"
+            return f"<!-- product not found (BLOCK) for “{phrase}” -->"
         return _block_html(p)
+
+    def _sub_notfound(m: re.Match) -> str:
+        kind, phrase = m.group(1), m.group(2).strip()
+        p = cache.get(phrase)
+        if p is None:
+            return m.group(0)  # still not found — leave the marker as-is
+        return _render(kind, p)
 
     html = _LEGACY_RE.sub(_sub_legacy, html)
     html = _TOKEN_RE.sub(_sub_token, html)
+    html = _NOTFOUND_RE.sub(_sub_notfound, html)
     return FillResult(html=html, filled=filled, unresolved=unresolved)
 
 
