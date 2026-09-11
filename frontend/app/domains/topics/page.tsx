@@ -66,16 +66,27 @@ function TopicsInner() {
     setAutoBusy(true);
     setAutoErr(null);
     try {
-      const r = await api.runJob({
+      // Fire-and-forget + poll, not a single blocking request: this job
+      // chains keyword discovery and LLM generation and can run past a
+      // minute, longer than Render's/the browser's connection will
+      // reliably stay open for one request — a slow-but-successful run
+      // was showing up client-side as "Failed to fetch" even though the
+      // job kept running server-side and actually finished.
+      const started = await api.runJob({
         kind: "topic_auto_generate",
         domain_id: domainId,
-        params: { seeds: seedsFromText() },
+        params: { seeds: seedsFromText(), _async: true },
       });
-      if (r.status !== "succeeded") {
-        setAutoErr(r.error || "記事の自動作成に失敗しました。");
+      let job = await api.job(started.job_id);
+      while (job.status === "queued" || job.status === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        job = await api.job(started.job_id);
+      }
+      if (job.status !== "succeeded") {
+        setAutoErr(job.error || "記事の自動作成に失敗しました。");
         return;
       }
-      const articleId = (r.result as { article_id?: number } | null)?.article_id;
+      const articleId = (job.result as { article_id?: number } | null)?.article_id;
       if (articleId) router.push(`/articles?id=${articleId}`);
     } catch (e) {
       setAutoErr((e as Error).message);

@@ -60,15 +60,24 @@ function NewArticleInner() {
     setFailed(null);
     setResult(null);
     try {
-      const params: Record<string, unknown> = { target_keyword: keyword.trim() };
+      const params: Record<string, unknown> = { target_keyword: keyword.trim(), _async: true };
       if (volume.trim()) params.search_volume = Number(volume);
       if (force) params.force = true;
       if (extra.trim()) params.extra_instructions = extra.trim();
-      const r = await api.runJob({ kind: "article_generate", domain_id: domainId, params });
-      if (r.status === "succeeded") {
-        setResult((r.result as GenResult) ?? {});
+      // Fire-and-forget + poll: article generation (LLM call, sometimes 60s+)
+      // can outlast a single held-open request/connection, which shows up
+      // client-side as a bare "Failed to fetch" even though the job keeps
+      // running server-side and finishes fine.
+      const started = await api.runJob({ kind: "article_generate", domain_id: domainId, params });
+      let job = await api.job(started.job_id);
+      while (job.status === "queued" || job.status === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        job = await api.job(started.job_id);
+      }
+      if (job.status === "succeeded") {
+        setResult((job.result as GenResult) ?? {});
       } else {
-        setFailed(r.error || `ジョブが ${r.status} で終了しました`);
+        setFailed(job.error || `ジョブが ${job.status} で終了しました`);
       }
     } catch (e) {
       setFailed((e as Error).message);
