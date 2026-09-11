@@ -139,6 +139,43 @@ export interface Recommendations {
   }[];
 }
 
+export type ImproveVerdict = "improved" | "declined" | "flat" | "too_early" | "no_data" | "unknown";
+
+export const VERDICT_LABEL: Record<ImproveVerdict, string> = {
+  improved: "良くなった",
+  declined: "悪くなった",
+  flat: "ほぼ変化なし",
+  too_early: "データ蓄積中",
+  no_data: "データ不足",
+  unknown: "不明",
+};
+
+export interface ImproveMetrics {
+  position: number | null;
+  clicks: number | null;
+  impressions: number | null;
+  days: number;
+}
+
+export interface ImproveHistoryEntry {
+  at: string;
+  job_id: string | null;
+  keyword: string;
+  action_hint: ActionHint;
+  title_before: string | null;
+  title_after: string | null;
+  meta_description_before: string | null;
+  meta_description_after: string | null;
+  body_changed: boolean;
+  cost_usd: number;
+  article_id: number;
+  article_title: string | null;
+  before: ImproveMetrics;
+  after: ImproveMetrics;
+  verdict: ImproveVerdict;
+  data_ready_at: string | null;
+}
+
 export interface PromptComponent {
   version: number;
   body: string;

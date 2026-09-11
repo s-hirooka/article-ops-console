@@ -206,6 +206,24 @@ def main() -> int:
         "kind": "improve_article", "domain_id": 1, "params": {"url": "x"}})
     check("improve_article without keyword -> 422", r.status_code == 422, r.text)
 
+    # --- improve-history (良くなった/悪くなったの履歴) -------------------
+    r = c.get("/api/domains/1/improve-history", headers=H)
+    check("improve-history -> 200", r.status_code == 200, r.text)
+    hist = r.json()
+    check("  has entries for both improve_article runs", len(hist) >= 2, str(hist))
+    check("  entries have before/after titles", all(
+        "title_before" in h and "title_after" in h for h in hist
+    ), str(hist))
+    check("  entries have a verdict", all(h.get("verdict") in
+          {"too_early", "no_data", "improved", "declined", "flat", "unknown"} for h in hist),
+          str(hist))
+    check("  ctr entry marks body_changed=False", any(
+        h.get("action_hint") == "ctr" and h.get("body_changed") is False for h in hist
+    ), str(hist))
+    check("  rewrite entry marks body_changed=True", any(
+        h.get("action_hint") == "rewrite" and h.get("body_changed") is True for h in hist
+    ), str(hist))
+
     # --- topic ideas (新規テーマ) ----------------------------------
     r = c.post("/api/domains/1/topic-ideas", headers=H, json={"seeds": ["すきま収納"], "limit": 10})
     check("topic-ideas -> 200", r.status_code == 200, r.text)

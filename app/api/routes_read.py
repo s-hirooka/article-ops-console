@@ -258,6 +258,16 @@ def recommendations(domain_id: int, session: Session = Depends(db)) -> dict:
     }
 
 
+@router.get("/domains/{domain_id}/improve-history")
+def improve_history(domain_id: int, session: Session = Depends(db)) -> list[dict]:
+    """「AIで実行」で行った改訂の履歴 — before/afterのタイトルと、そのキーワードの
+    順位・クリック数・表示回数が編集の前後でどう動いたか（GSCの反映ラグを考慮）。"""
+    _get_domain(session, domain_id)
+    from app.services.improve_history import list_improve_history
+
+    return list_improve_history(session, account_id=_aid(session), domain_id=domain_id)
+
+
 # --- jobs & usage ---------------------------------------------------------------
 @router.get("/jobs")
 def list_jobs(

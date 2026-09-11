@@ -106,6 +106,8 @@ export const api = {
     ),
   recommendations: (id: number) =>
     req<Recommendations>(`/api/domains/${id}/recommendations`),
+  improveHistory: (id: number) =>
+    req<import("./types").ImproveHistoryEntry[]>(`/api/domains/${id}/improve-history`),
   topicIdeas: (
     id: number,
     body: { seeds?: string[]; page_url?: string; limit?: number } = {},

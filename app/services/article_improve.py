@@ -28,6 +28,7 @@ page's URL, and an action_hint (ctr / rewrite / weak / review) — and:
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -123,6 +124,11 @@ def run_improve(
     art = _find_or_import(
         session, account_id=account_id, domain_id=domain_id, domain=domain, url=url
     )
+    # snapshot the pre-edit state — nothing else keeps a revision history, so
+    # this is what lets a later "did it help?" view show a real before/after
+    # instead of just the after
+    title_before = art.title
+    meta_description_before = (art.meta_json or {}).get("meta_description")
 
     assembled = prompt_assembly.assemble(session, domain_id)
     acct = session.get(m.Account, account_id)
@@ -221,6 +227,23 @@ def run_improve(
     meta["warnings"] = warnings
     meta["improved_for_keyword"] = keyword
     meta["improve_action_hint"] = action_hint
+    # a running log on the article itself — app/services/improve_history.py
+    # reads this list to build the before/after view without needing to
+    # reconstruct it from job rows
+    history = list(meta.get("improve_history") or [])
+    history.append({
+        "at": datetime.now(timezone.utc).isoformat(),
+        "job_id": job_id,
+        "keyword": keyword,
+        "action_hint": action_hint,
+        "title_before": title_before,
+        "title_after": art.title,
+        "meta_description_before": meta_description_before,
+        "meta_description_after": meta.get("meta_description"),
+        "body_changed": action_hint != "ctr",
+        "cost_usd": cost_usd,
+    })
+    meta["improve_history"] = history[-20:]  # cap growth on a heavily-iterated article
     art.meta_json = meta
     session.flush()
 
@@ -232,6 +255,7 @@ def run_improve(
     return {
         "article_id": art.id,
         "title": art.title,
+        "title_before": title_before,
         "keyword": keyword,
         "action_hint": action_hint,
         "cost_usd": cost_usd,

@@ -17,12 +17,14 @@ import {
   TableWrap,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import { fmtDate, num, severityTone } from "@/lib/format";
-import { HINT_LABEL } from "@/lib/types";
+import { fmtDate, fmtDateTime, num, severityTone } from "@/lib/format";
+import { HINT_LABEL, VERDICT_LABEL } from "@/lib/types";
 import type {
   Alert,
   Article,
   DomainDetail,
+  ImproveHistoryEntry,
+  ImproveVerdict,
   RankRow,
   Recommendations,
 } from "@/lib/types";
@@ -45,6 +47,7 @@ function DomainInner() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [rec, setRec] = useState<Recommendations | null>(null);
+  const [improveHist, setImproveHist] = useState<ImproveHistoryEntry[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -59,13 +62,15 @@ function DomainInner() {
       api.alerts(domainId, 30),
       api.articles(domainId),
       api.recommendations(domainId),
+      api.improveHistory(domainId),
     ])
-      .then(([dd, rk, al, ar, rc]) => {
+      .then(([dd, rk, al, ar, rc, ih]) => {
         setD(dd);
         setRank(rk);
         setAlerts(al);
         setArticles(ar);
         setRec(rc);
+        setImproveHist(ih);
       })
       .catch((e) => setErr(e.message));
   }
@@ -252,6 +257,44 @@ function DomainInner() {
         </>
       )}
 
+      <SectionTitle>AIによる改訂履歴（良くなった／悪くなった）</SectionTitle>
+      {improveHist.length === 0 ? (
+        <Empty>「AIで実行」を使うとここに記録されます。</Empty>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {improveHist.map((h, i) => (
+            <Card key={i}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-[12px] text-ink2">
+                  <span>{fmtDateTime(h.at)}</span>
+                  <span>・{h.keyword}</span>
+                  <span>・{h.body_changed ? "本文リライト" : "タイトル改善"}</span>
+                </div>
+                <Pill tone={verdictTone(h.verdict)}>{VERDICT_LABEL[h.verdict]}</Pill>
+              </div>
+              <div className="mt-2 text-[13px]">
+                <div className="text-ink2 line-through decoration-ink2/40">
+                  {h.title_before || "（タイトルなし）"}
+                </div>
+                <div className="font-medium">{h.title_after}</div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-3 text-[12px]">
+                <MetricCompare label="平均掲載順位" before={h.before.position} after={h.after.position}
+                                lowerIsBetter unit="" />
+                <MetricCompare label="クリック数/日" before={h.before.clicks} after={h.after.clicks} unit="" />
+                <MetricCompare label="表示回数/日" before={h.before.impressions} after={h.after.impressions} unit="" />
+              </div>
+              {(h.verdict === "too_early") && (
+                <div className="mt-2 text-[11px] text-ink2">
+                  GSCの反映ラグのため、{h.data_ready_at ? fmtDate(h.data_ready_at) : "数日後"}
+                  以降に効果が確認できます。
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+
       {rec && rec.declining.length > 0 && (
         <>
           <SectionTitle>順位が下落したページ（直近30日）</SectionTitle>
@@ -372,5 +415,46 @@ function DomainInner() {
         </TableWrap>
       )}
     </>
+  );
+}
+
+function verdictTone(v: ImproveVerdict): "ok" | "warn" | "crit" | "muted" {
+  if (v === "improved") return "ok";
+  if (v === "declined") return "crit";
+  return "muted";
+}
+
+function MetricCompare({
+  label,
+  before,
+  after,
+  unit,
+  lowerIsBetter = false,
+}: {
+  label: string;
+  before: number | null;
+  after: number | null;
+  unit: string;
+  lowerIsBetter?: boolean;
+}) {
+  const hasBoth = before != null && after != null;
+  const delta = hasBoth ? after! - before! : null;
+  const improved = delta != null && (lowerIsBetter ? delta < 0 : delta > 0);
+  const worsened = delta != null && delta !== 0 && !improved;
+  return (
+    <div>
+      <div className="text-ink2">{label}</div>
+      <div className="mt-0.5 flex items-center gap-1 font-mono">
+        <span>{before ?? "—"}{unit}</span>
+        <span className="text-ink2">→</span>
+        <span
+          className={
+            improved ? "text-ok" : worsened ? "text-crit" : undefined
+          }
+        >
+          {after ?? "—"}{unit}
+        </span>
+      </div>
+    </div>
   );
 }
