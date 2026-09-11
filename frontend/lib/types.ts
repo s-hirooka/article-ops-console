@@ -126,6 +126,7 @@ export interface Recommendations {
     post_id: number | null;
     position: number | null;
     impressions: number | null;
+    clicks: number | null;
     ctr: number | null;
     action_hint: ActionHint;
   }[];

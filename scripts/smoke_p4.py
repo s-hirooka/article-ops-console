@@ -159,6 +159,8 @@ def main() -> int:
 
     rec = c.get("/api/domains/1/recommendations").json()
     check("recommendations computed", "improvement_candidates" in rec and "declining" in rec)
+    check("  improvement_candidates carry clicks", len(rec["improvement_candidates"]) > 0 and
+          all("clicks" in c for c in rec["improvement_candidates"]), str(rec["improvement_candidates"]))
 
     # --- improve_article (次の打ち手を実行) ---------------------------
     # exercises the import-from-WordPress path: this URL has no matching

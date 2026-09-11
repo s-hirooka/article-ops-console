@@ -219,6 +219,8 @@ function DomainInner() {
                 <Th>キーワード</Th>
                 <Th num>スコア</Th>
                 <Th num>順位</Th>
+                <Th num>表示回数</Th>
+                <Th num>クリック数</Th>
                 <Th>打ち手</Th>
                 <Th>該当ページ</Th>
                 <Th>アクション</Th>
@@ -230,6 +232,8 @@ function DomainInner() {
                   <Td>{o.keyword}</Td>
                   <Td num>{num(o.score)}</Td>
                   <Td num>{num(o.position, 0)}</Td>
+                  <Td num>{o.impressions ?? "—"}</Td>
+                  <Td num>{o.clicks ?? "—"}</Td>
                   <Td className="text-[12px]">{HINT_LABEL[o.action_hint]}</Td>
                   <Td>
                     <a

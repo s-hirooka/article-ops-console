@@ -227,6 +227,7 @@ def recommendations(domain_id: int, session: Session = Depends(db)) -> dict:
                     "post_id": r.post_id,
                     "position": pos,
                     "impressions": inputs.get("impressions"),
+                    "clicks": inputs.get("clicks"),
                     "ctr": inputs.get("ctr"),
                     "action_hint": _hint(pos),
                 }

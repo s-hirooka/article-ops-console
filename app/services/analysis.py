@@ -75,7 +75,7 @@ def _trend_score(change_7d: float | None) -> float:
     return 50.0
 
 
-def _score(pos, imp, ctr, volume, change_7d) -> tuple[float, dict]:
+def _score(pos, imp, ctr, volume, change_7d, clicks=None) -> tuple[float, dict]:
     parts = {
         "position_score": round(_position_score(pos), 1),
         "ctr_gap_score": round(_ctr_gap_score(pos, ctr), 1),
@@ -91,7 +91,7 @@ def _score(pos, imp, ctr, volume, change_7d) -> tuple[float, dict]:
         + W["trend"] * parts["trend_score"]
     )
     parts["weights"] = W
-    parts["inputs"] = {"position": pos, "impressions": imp, "ctr": ctr,
+    parts["inputs"] = {"position": pos, "impressions": imp, "clicks": clicks, "ctr": ctr,
                        "search_volume": volume, "change_7d": change_7d}
     return round(max(0.0, min(100.0, total)), 1), parts
 
@@ -151,6 +151,7 @@ def run_analysis(session: Session, *, account_id: int, domain_id: int) -> dict:
         value, breakdown = _score(
             pos, float(r.impressions or 0), float(r.ctr or 0),
             float(r.search_volume) if r.search_volume else None, change_7d,
+            clicks=int(r.clicks or 0),
         )
         _upsert_score(session, account_id, domain_id, r, latest, value, breakdown, now)
         scored += 1
