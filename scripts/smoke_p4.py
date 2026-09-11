@@ -160,6 +160,35 @@ def main() -> int:
     rec = c.get("/api/domains/1/recommendations").json()
     check("recommendations computed", "improvement_candidates" in rec and "declining" in rec)
 
+    # --- improve_article (次の打ち手を実行) ---------------------------
+    # exercises the import-from-WordPress path: this URL has no matching
+    # articles row yet (WP_FAKE=1 makes find_post_by_slug return fake content
+    # regardless of slug).
+    # keyword deliberately unrelated to the "すきま収納" family the later
+    # topic-ideas fake data uses — the resulting article's title joins the
+    # own-drafts cannibalization pool, and a colliding keyword here would
+    # spuriously suppress the topic-ideas candidates below.
+    r = c.post("/api/jobs", headers=H, json={
+        "kind": "improve_article", "domain_id": 1,
+        "params": {"url": "https://comfortablelivinglab.com/existing-page/",
+                    "keyword": "玄関 掃除 コツ", "action_hint": "ctr"}})
+    check("improve_article -> 201", r.status_code == 201, r.text)
+    ij = r.json()
+    check("  succeeded", ij["status"] == "succeeded", str(ij))
+    ires = ij.get("result") or {}
+    check("  article_id present", isinstance(ires.get("article_id"), int), str(ires))
+    check("  wp_link present", bool(ires.get("wp_link")), str(ires))
+    imp_art = c.get(f"/api/articles/{ires.get('article_id')}", headers=H)
+    check("  improved article fetchable", imp_art.status_code == 200)
+    check("  title updated", bool(imp_art.json().get("title")), imp_art.text)
+
+    r = c.post("/api/jobs", headers=H, json={
+        "kind": "improve_article", "params": {"url": "x", "keyword": "y"}})
+    check("improve_article without domain_id -> 422", r.status_code == 422, r.text)
+    r = c.post("/api/jobs", headers=H, json={
+        "kind": "improve_article", "domain_id": 1, "params": {"url": "x"}})
+    check("improve_article without keyword -> 422", r.status_code == 422, r.text)
+
     # --- topic ideas (新規テーマ) ----------------------------------
     r = c.post("/api/domains/1/topic-ideas", headers=H, json={"seeds": ["すきま収納"], "limit": 10})
     check("topic-ideas -> 200", r.status_code == 200, r.text)

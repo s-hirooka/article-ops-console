@@ -45,7 +45,7 @@ class ArticleResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _resolve_byok(domain: m.Domain) -> str | None:
+def resolve_byok_key(domain: m.Domain) -> str | None:
     if not domain.anthropic_api_key_enc:
         return None
     try:
@@ -119,7 +119,7 @@ def run_article_generate(
     if status.warning:
         warnings.append(status.warning)
 
-    byok = _resolve_byok(domain)
+    byok = resolve_byok_key(domain)
     draft = generate_draft(
         DraftRequest(
             system=assembled.system,

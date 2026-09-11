@@ -23,7 +23,7 @@ from app.services.budget import BudgetExceeded
 
 VALID_KINDS = {
     "article_generate", "rank_sync", "analysis", "eyecatch", "test_prompt",
-    "topic_auto_generate",
+    "topic_auto_generate", "improve_article",
 }
 
 
@@ -175,6 +175,25 @@ def _dispatch(s: Session, job: m.Job) -> dict:
             "faked": res.faked,
             "warnings": res.warnings,
         }
+
+    if job.kind == "improve_article":
+        from app.services.article_improve import ImproveError, run_improve
+
+        domain_id = job.domain_id or int(p["domain_id"])
+        try:
+            res = run_improve(
+                s,
+                account_id=job.account_id,
+                domain_id=domain_id,
+                url=p["url"],
+                keyword=p["keyword"],
+                action_hint=p.get("action_hint", "rewrite"),
+                job_id=job.id,
+            )
+        except ImproveError as exc:
+            raise PipelineError(str(exc)) from exc
+        job.llm_cost_usd = res["cost_usd"]
+        return res
 
     if job.kind == "test_prompt":
         domain_id = job.domain_id or int(p["domain_id"])

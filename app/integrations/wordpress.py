@@ -122,6 +122,21 @@ class WordPressClient:
         result = self._request("GET", f"/wp-json/wp/v2/posts{q}")
         return result if isinstance(result, list) else []
 
+    def find_post_by_slug(self, slug: str) -> dict | None:
+        """Full post (incl. content) by slug — for importing a page that
+        predates the console (published outside it, so has no `articles`
+        row) into one so it can be revised/republished through the app."""
+        if _fake():
+            return {
+                "id": 900003,
+                "link": f"{self._c.base_url}/{slug}/",
+                "title": {"rendered": slug},
+                "content": {"rendered": "<p>fake existing content</p>"},
+            }
+        q = f"?slug={slug}&_fields=id,link,title,content"
+        result = self._request("GET", f"/wp-json/wp/v2/posts{q}")
+        return result[0] if isinstance(result, list) and result else None
+
     def trash_post(self, post_id: int) -> dict:
         """Move a post to the trash (recoverable). Not a permanent delete."""
         if _fake():

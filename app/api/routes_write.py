@@ -236,8 +236,13 @@ def create_job(
         _guard_domain(session, body.domain_id)
     if body.kind in ("article_generate",) and not body.params.get("target_keyword"):
         raise HTTPException(422, "article_generate には params.target_keyword が必要です。")
-    if body.kind in ("topic_auto_generate", "rank_sync", "analysis") and body.domain_id is None:
+    if body.kind in ("topic_auto_generate", "rank_sync", "analysis", "improve_article") \
+            and body.domain_id is None:
         raise HTTPException(422, f"{body.kind} には domain_id が必要です。")
+    if body.kind == "improve_article" and not (
+        body.params.get("url") and body.params.get("keyword")
+    ):
+        raise HTTPException(422, "improve_article には params.url と params.keyword が必要です。")
 
     job = jobsvc.enqueue(
         session,

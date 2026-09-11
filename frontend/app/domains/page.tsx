@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import RankChart from "@/components/RankChart";
 import {
@@ -37,6 +37,7 @@ export default function DomainPage() {
 
 function DomainInner() {
   const sp = useSearchParams();
+  const router = useRouter();
   const domainId = Number(sp.get("id"));
 
   const [d, setD] = useState<DomainDetail | null>(null);
@@ -47,6 +48,8 @@ function DomainInner() {
   const [err, setErr] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [improving, setImproving] = useState<string | null>(null);
+  const [improveErr, setImproveErr] = useState<string | null>(null);
 
   function load() {
     if (!domainId) return;
@@ -72,8 +75,12 @@ function DomainInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domainId]);
 
-  async function runJobAndWait(kind: string) {
-    const started = await api.runJob({ kind, domain_id: domainId, params: { _async: true } });
+  async function runJobAndWait(kind: string, params: Record<string, unknown> = {}) {
+    const started = await api.runJob({
+      kind,
+      domain_id: domainId,
+      params: { ...params, _async: true },
+    });
     let job = await api.job(started.job_id);
     while (job.status === "queued" || job.status === "running") {
       await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -104,6 +111,28 @@ function DomainInner() {
       setSyncMsg((e as Error).message);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function improveNow(o: Recommendations["improvement_candidates"][number]) {
+    setImproving(o.url);
+    setImproveErr(null);
+    try {
+      const job = await runJobAndWait("improve_article", {
+        url: o.url,
+        keyword: o.keyword,
+        action_hint: o.action_hint,
+      });
+      if (job.status !== "succeeded") {
+        setImproveErr(job.error || "AIによる修正に失敗しました。");
+        return;
+      }
+      const articleId = (job.result as { article_id?: number } | null)?.article_id;
+      if (articleId) router.push(`/articles?id=${articleId}`);
+    } catch (e) {
+      setImproveErr((e as Error).message);
+    } finally {
+      setImproving(null);
     }
   }
 
@@ -170,7 +199,15 @@ function DomainInner() {
         <Empty>機会スコアがまだありません（analysis ジョブ未実行）。</Empty>
       ) : (
         <>
-          <div className="mb-2 text-[12px] text-ink2">{rec.note}</div>
+          <div className="mb-2 text-[12px] text-ink2">
+            {rec.note} 「AIで実行」を押すと現状の記事をAIが読み、打ち手（タイトル改善 or
+            本文リライト）に沿って改訂し、そのまま公開します（Anthropic API の実課金が発生します）。
+          </div>
+          {improveErr && (
+            <div className="mb-2">
+              <ErrorNote>{improveErr}</ErrorNote>
+            </div>
+          )}
           <TableWrap>
             <thead>
               <tr>
@@ -179,6 +216,7 @@ function DomainInner() {
                 <Th num>順位</Th>
                 <Th>打ち手</Th>
                 <Th>該当ページ</Th>
+                <Th>アクション</Th>
               </tr>
             </thead>
             <tbody>
@@ -197,6 +235,15 @@ function DomainInner() {
                     >
                       開く ↗
                     </a>
+                  </Td>
+                  <Td>
+                    <button
+                      onClick={() => improveNow(o)}
+                      disabled={!!improving}
+                      className="text-[12px] text-accent hover:underline disabled:opacity-60"
+                    >
+                      {improving === o.url ? "AI修正中…（30〜90秒）" : "🤖 AIで実行"}
+                    </button>
                   </Td>
                 </tr>
               ))}
