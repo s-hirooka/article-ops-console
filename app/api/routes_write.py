@@ -255,7 +255,17 @@ def create_job(
         background.add_task(jobsvc.run_job, job_id, account_id)
         return {"job_id": job_id, "status": "queued"}
 
-    final = jobsvc.run_job(job_id, account_id)  # blocks until done; own session
+    try:
+        final = jobsvc.run_job(job_id, account_id)  # blocks until done; own session
+    except Exception as exc:
+        # run_job() catches everything raised by the dispatched work itself,
+        # but tenant_session's commit-on-exit happens *after* that try/except
+        # returns, so a commit-time failure (e.g. a dropped pooled connection
+        # from a slow external call held mid-transaction) would otherwise
+        # escape as a bare, undiagnosable 500. Surface it instead.
+        raise HTTPException(
+            500, f"ジョブ実行中に予期しないエラー: {type(exc).__name__}: {exc}"
+        ) from exc
     return {"job_id": job_id, **final}
 
 
