@@ -7,14 +7,23 @@ page's URL, and an action_hint (ctr / rewrite / weak / review) — and:
      if the page predates the console (written before this app existed, so
      was never tracked — the common case for real recommendation targets,
      since those are pages that already rank).
-  2. Asks Claude to revise it: a title/meta_description-only pass for
-     "ctr" (already ranks well, needs a better click), a fuller body_html
-     rewrite for "rewrite"/"weak" (needs to move up first). Reuses
-     generate_draft() — the same tool-use structured output fresh generation
-     uses — via DraftRequest.extra_instructions carrying the current
-     content plus a revision brief, rather than a separate prompt path.
-  3. Runs the same product-token / internal-link auto-fill fresh generation
-     gets, so a revision can't regress to placeholder gaps.
+  2. Asks Claude to revise it — two different shapes depending on
+     action_hint, not one prompt asked to sometimes skip a field:
+       - "ctr" (already ranks well, needs a better click): a title/meta-only
+         call (generate_title_revision — a tool with no body_html property
+         at all). body_html is left exactly as-is in code, never round-
+         tripped through the model. Earlier this asked generate_draft() to
+         "leave body_html unchanged" and just echo it back — the model
+         sometimes omitted the (required) field instead of echoing 10,000+
+         characters back verbatim, crashing the parse (seen in production
+         as a bare KeyError). Not asking for it removes the failure mode.
+       - "rewrite"/"weak" (needs to move up first): the full generate_draft()
+         pass — same tool-use structured output fresh generation uses — via
+         DraftRequest.extra_instructions carrying the current content plus
+         a revision brief.
+  3. For a body_html-changing revision, runs the same product-token /
+     internal-link auto-fill fresh generation gets, so it can't regress to
+     placeholder gaps. Skipped for a title-only revision (nothing changed).
   4. Updates the row and republishes.
 """
 from __future__ import annotations
@@ -29,7 +38,7 @@ from app.integrations.wordpress import WordPressClient, WordPressError
 from app.services import budget, prompt_assembly
 from app.services.article_pipeline import resolve_byok_key
 from app.services.internal_link_fill import fill_related_links
-from app.services.llm import DraftRequest, generate_draft
+from app.services.llm import DraftRequest, generate_draft, generate_title_revision
 from app.services.pricing import estimate_article_cost
 from app.services.product_fill import fill_products
 from app.services.publish import PublishError, publish_article, wp_creds_for_domain
@@ -123,86 +132,92 @@ def run_improve(
     precheck = budget.precheck(session, account_id, est)
     warnings: list[str] = [precheck.warning] if precheck.warning else []
 
+    byok = resolve_byok_key(domain)
+
     if action_hint == "ctr":
-        brief = (
+        extra = (
             "この記事は既に検索順位が良好（10位前後）ですが、クリック率が低いと"
-            f"見られます。本文(body_html)は変更せず、現状のものをそのまま出力"
-            f"してください。タイトルとメタディスクリプションだけを「{keyword}」という"
-            "検索語に対してより具体的でクリックされやすい表現に改善してください。"
+            f"見られます。タイトルとメタディスクリプションだけを「{keyword}」という"
+            "検索語に対してより具体的でクリックされやすい表現に改善してください。\n\n"
+            f"--- 既存タイトル ---\n{art.title or ''}\n\n"
+            f"--- 本文冒頭（参考。変更対象ではない） ---\n{(art.body_html or '')[:2000]}"
         )
+        rev = generate_title_revision(
+            DraftRequest(system=assembled.system, target_keyword=keyword,
+                         extra_instructions=extra),
+            model=model, api_key=byok,
+        )
+        cost_usd, faked = rev.cost_usd, rev.faked
+        budget.record_usage(
+            session, account_id=account_id, domain_id=domain_id, job_id=job_id,
+            model=rev.model, input_tokens=rev.input_tokens, output_tokens=rev.output_tokens,
+            cache_read_tokens=rev.cache_read_tokens, cache_write_tokens=rev.cache_write_tokens,
+            cost_usd=rev.cost_usd,
+        )
+        art.title = rev.title
+        # body_html deliberately untouched — nothing to re-fill/re-check
+        meta = dict(art.meta_json or {})
+        meta["meta_description"] = rev.meta_description
     else:
-        brief = (
+        extra = (
             f"この記事はまだ「{keyword}」で十分な順位が取れていません。既存本文の"
             "良い部分は活かしつつ、このキーワードに対する網羅性・具体性を高めて"
             "内容を拡充・再構成してください。見出し構成を見直して情報を追加しても"
-            "構いません。"
+            "構いません。\n\n--- 既存タイトル ---\n"
+            f"{art.title or ''}\n\n--- 既存本文(body_html) ---\n{art.body_html or ''}\n\n"
+            "上記を踏まえた改訂後の記事全体を submit_draft で提出してください。"
+        )
+        draft = generate_draft(
+            DraftRequest(system=assembled.system, target_keyword=keyword,
+                         vc_auto_ads_defaults=assembled.vc_auto_ads_defaults,
+                         extra_instructions=extra),
+            model=model, api_key=byok,
+        )
+        cost_usd, faked = draft.cost_usd, draft.faked
+        budget.record_usage(
+            session, account_id=account_id, domain_id=domain_id, job_id=job_id,
+            model=draft.model, input_tokens=draft.input_tokens, output_tokens=draft.output_tokens,
+            cache_read_tokens=draft.cache_read_tokens, cache_write_tokens=draft.cache_write_tokens,
+            cost_usd=draft.cost_usd,
         )
 
-    extra = (
-        f"{brief}\n\n--- 既存タイトル ---\n{art.title or ''}\n\n"
-        f"--- 既存本文(body_html) ---\n{art.body_html or ''}\n\n"
-        "上記を踏まえた改訂後の記事全体を submit_draft で提出してください。"
-    )
+        body_html = draft.body_html
+        try:
+            fill = fill_products(body_html)
+            body_html = fill.html
+            if fill.unresolved:
+                warnings.append(
+                    "商品が見つからなかった検索語があります（公開前に本文を確認）: "
+                    + "、".join(fill.unresolved)
+                )
+        except Exception as exc:
+            warnings.append(f"Amazon 商品自動挿入に失敗しました（プレースホルダーのまま）: {exc}")
 
-    draft = generate_draft(
-        DraftRequest(
-            system=assembled.system,
-            target_keyword=keyword,
-            vc_auto_ads_defaults=assembled.vc_auto_ads_defaults,
-            extra_instructions=extra,
-        ),
-        model=model,
-        api_key=resolve_byok_key(domain),
-    )
+        try:
+            wp = WordPressClient(wp_creds_for_domain(domain))
+            related = fill_related_links(
+                body_html, wp=wp, topic_text=f"{draft.title} {keyword}",
+                exclude_post_id=art.wp_post_id,
+            )
+            body_html = related.html
+            if related.slots_left_empty:
+                warnings.append(
+                    f"あわせて読みたい: 一致する関連記事が見つからない枠が"
+                    f"{related.slots_left_empty}件あります（公開前に本文を確認）。"
+                )
+        except Exception as exc:
+            warnings.append(f"関連記事の自動リンク付けに失敗しました（プレースホルダーのまま）: {exc}")
 
-    budget.record_usage(
-        session,
-        account_id=account_id,
-        domain_id=domain_id,
-        job_id=job_id,
-        model=draft.model,
-        input_tokens=draft.input_tokens,
-        output_tokens=draft.output_tokens,
-        cache_read_tokens=draft.cache_read_tokens,
-        cache_write_tokens=draft.cache_write_tokens,
-        cost_usd=draft.cost_usd,
-    )
+        art.title = draft.title
+        art.body_html = body_html
+        meta = dict(art.meta_json or {})
+        meta["meta_description"] = draft.meta_description
+
     try:
-        budget.enforce_job_ceiling(session, account_id, draft.cost_usd)
+        budget.enforce_job_ceiling(session, account_id, cost_usd)
     except budget.BudgetExceeded as exc:
         warnings.append(str(exc))
 
-    body_html = draft.body_html
-    try:
-        fill = fill_products(body_html)
-        body_html = fill.html
-        if fill.unresolved:
-            warnings.append(
-                "商品が見つからなかった検索語があります（公開前に本文を確認）: "
-                + "、".join(fill.unresolved)
-            )
-    except Exception as exc:
-        warnings.append(f"Amazon 商品自動挿入に失敗しました（プレースホルダーのまま）: {exc}")
-
-    try:
-        wp = WordPressClient(wp_creds_for_domain(domain))
-        related = fill_related_links(
-            body_html, wp=wp, topic_text=f"{draft.title} {keyword}",
-            exclude_post_id=art.wp_post_id,
-        )
-        body_html = related.html
-        if related.slots_left_empty:
-            warnings.append(
-                f"あわせて読みたい: 一致する関連記事が見つからない枠が"
-                f"{related.slots_left_empty}件あります（公開前に本文を確認）。"
-            )
-    except Exception as exc:
-        warnings.append(f"関連記事の自動リンク付けに失敗しました（プレースホルダーのまま）: {exc}")
-
-    art.title = draft.title
-    art.body_html = body_html
-    meta = dict(art.meta_json or {})
-    meta["meta_description"] = draft.meta_description
     meta["warnings"] = warnings
     meta["improved_for_keyword"] = keyword
     meta["improve_action_hint"] = action_hint
@@ -219,8 +234,8 @@ def run_improve(
         "title": art.title,
         "keyword": keyword,
         "action_hint": action_hint,
-        "cost_usd": draft.cost_usd,
-        "faked": draft.faked,
+        "cost_usd": cost_usd,
+        "faked": faked,
         "warnings": warnings,
         "wp_link": pub.get("link"),
     }

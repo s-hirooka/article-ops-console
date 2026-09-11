@@ -182,6 +182,23 @@ def main() -> int:
     check("  improved article fetchable", imp_art.status_code == 200)
     check("  title updated", bool(imp_art.json().get("title")), imp_art.text)
 
+    # rewrite path — same imported article, action_hint="rewrite" this time:
+    # exercises the full generate_draft() branch (body_html actually
+    # changes) plus product/related-link auto-fill on the result.
+    r = c.post("/api/jobs", headers=H, json={
+        "kind": "improve_article", "domain_id": 1,
+        "params": {"url": "https://comfortablelivinglab.com/existing-page/",
+                    "keyword": "玄関 収納 グッズ", "action_hint": "rewrite"}})
+    check("improve_article (rewrite) -> 201", r.status_code == 201, r.text)
+    rj = r.json()
+    check("  succeeded", rj["status"] == "succeeded", str(rj))
+    rres = rj.get("result") or {}
+    check("  same article reused (not a duplicate import)",
+          rres.get("article_id") == ires.get("article_id"), str(rres))
+    rw_body = c.get(f"/api/articles/{rres.get('article_id')}", headers=H).json()["body_html"]
+    check("  no raw [[PRODUCT_ tokens left", "[[PRODUCT_" not in rw_body, rw_body)
+    check("  no [[RELATED_ARTICLE tokens left", "[[RELATED_ARTICLE" not in rw_body, rw_body)
+
     r = c.post("/api/jobs", headers=H, json={
         "kind": "improve_article", "params": {"url": "x", "keyword": "y"}})
     check("improve_article without domain_id -> 422", r.status_code == 422, r.text)

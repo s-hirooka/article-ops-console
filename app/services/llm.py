@@ -42,6 +42,32 @@ _SUBMIT_DRAFT_TOOL = {
 }
 _TOOL_INSTRUCTION = "書き終えたら submit_draft ツールを呼び出し、上記の内容を渡してください。"
 
+# For a title/meta-only revision (article_improve.py's "ctr" action_hint):
+# a *separate*, smaller tool that doesn't ask for body_html at all. Reusing
+# submit_draft with instructions to "leave body_html unchanged" sounds
+# equivalent but isn't reliable in practice — a model told a field doesn't
+# need changing sometimes omits it from the tool call entirely, and
+# body_html is a required property, so that omission crashed the parse
+# (seen in production as a bare KeyError). Not asking for it at all removes
+# the failure mode instead of hoping the model always includes it anyway.
+_SUBMIT_TITLE_TOOL = {
+    "name": "submit_title_revision",
+    "description": "改善したタイトルとメタディスクリプションを提出する。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "slug": {"type": "string", "description": "ascii-kebab-case"},
+            "meta_description": {"type": "string", "description": "120字以内"},
+        },
+        "required": ["title", "slug", "meta_description"],
+    },
+}
+_TITLE_TOOL_INSTRUCTION = (
+    "書き終えたら submit_title_revision ツールを呼び出し、上記の内容を渡してください。"
+    "本文(body_html)は変更しないので出力不要です。"
+)
+
 
 @dataclass(frozen=True)
 class DraftRequest:
@@ -119,6 +145,105 @@ def _fake(req: DraftRequest, model: str) -> DraftResult:
     )
 
 
+@dataclass(frozen=True)
+class TitleRevisionResult:
+    title: str
+    slug: str
+    meta_description: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    cost_usd: float
+    faked: bool = False
+
+
+def _fake_title(req: DraftRequest, model: str) -> TitleRevisionResult:
+    kw = req.target_keyword
+    slug = re.sub(r"[^a-z0-9]+", "-", kw.lower()).strip("-") or "draft"
+    return TitleRevisionResult(
+        title=f"{kw}｜クリックしたくなる改善版タイトル",
+        slug=slug,
+        meta_description=f"{kw}について、より具体的でクリックされやすい説明文に改善しました。",
+        model=model,
+        input_tokens=300,
+        output_tokens=150,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+        cost_usd=cost_usd(model, 300, 150),
+        faked=True,
+    )
+
+
+def generate_title_revision(
+    req: DraftRequest,
+    *,
+    model: str = "claude-sonnet-5",
+    api_key: str | None = None,
+    max_tokens: int = 1000,
+) -> TitleRevisionResult:
+    """Title + meta_description only — for a CTR-focused revision that
+    deliberately leaves body_html untouched (see _SUBMIT_TITLE_TOOL)."""
+    if _use_fake(api_key):
+        return _fake_title(req, model)
+
+    import anthropic  # lazy: keep import cost off the fake path
+
+    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+    parts = [f"対象キーワード: {req.target_keyword}"]
+    if req.extra_instructions:
+        parts.append(req.extra_instructions)
+    parts.append(_TITLE_TOOL_INSTRUCTION)
+    kwargs: dict = dict(
+        model=model,
+        max_tokens=max_tokens,
+        system=[{"type": "text", "text": req.system, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": "\n\n".join(parts)}],
+        tools=[_SUBMIT_TITLE_TOOL],
+        tool_choice={"type": "auto"},
+    )
+    try:
+        with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
+            msg = stream.get_final_message()
+    except TypeError:
+        with client.messages.stream(**kwargs) as stream:
+            msg = stream.get_final_message()
+
+    tool_use = next(
+        (b for b in msg.content if getattr(b, "type", None) == "tool_use"
+         and getattr(b, "name", None) == "submit_title_revision"),
+        None,
+    )
+    if tool_use is None:
+        text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+        raise RuntimeError(
+            f"モデルが submit_title_revision を呼び出しませんでした"
+            f"（stop_reason={msg.stop_reason}）: {text[:300]}"
+        )
+    data = tool_use.input
+
+    u = msg.usage
+    in_tok = int(getattr(u, "input_tokens", 0) or 0)
+    out_tok = int(getattr(u, "output_tokens", 0) or 0)
+    cr = int(getattr(u, "cache_read_input_tokens", 0) or 0)
+    cw = int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+
+    return TitleRevisionResult(
+        title=str(data.get("title", "")).strip(),
+        slug=re.sub(r"[^a-z0-9-]+", "-", str(data.get("slug", "")).lower()).strip("-")
+        or "draft",
+        meta_description=str(data.get("meta_description", "")).strip(),
+        model=model,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        cache_read_tokens=cr,
+        cache_write_tokens=cw,
+        cost_usd=cost_usd(model, in_tok, out_tok, cr, cw),
+        faked=False,
+    )
+
+
 def _use_fake(api_key: str | None) -> bool:
     if os.environ.get("LLM_FAKE") == "1":
         return True
@@ -169,6 +294,11 @@ def generate_draft(
             f"{text[:300]}"
         )
     data = tool_use.input
+    if not data.get("title") or not data.get("body_html"):
+        raise RuntimeError(
+            f"submit_draft の必須項目（title/body_html）が欠けています: "
+            f"{list(data.keys())}"
+        )
 
     u = msg.usage
     in_tok = int(getattr(u, "input_tokens", 0) or 0)
