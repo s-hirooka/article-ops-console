@@ -45,8 +45,10 @@ function DomainInner() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [rec, setRec] = useState<Recommendations | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
-  useEffect(() => {
+  function load() {
     if (!domainId) return;
     Promise.all([
       api.domain(domainId),
@@ -63,7 +65,47 @@ function DomainInner() {
         setRec(rc);
       })
       .catch((e) => setErr(e.message));
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domainId]);
+
+  async function runJobAndWait(kind: string) {
+    const started = await api.runJob({ kind, domain_id: domainId, params: { _async: true } });
+    let job = await api.job(started.job_id);
+    while (job.status === "queued" || job.status === "running") {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      job = await api.job(started.job_id);
+    }
+    return job;
+  }
+
+  async function syncNow() {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const rs = await runJobAndWait("rank_sync");
+      if (rs.status !== "succeeded") {
+        setSyncMsg(`Search Console 同期に失敗: ${rs.error || rs.status}`);
+        return;
+      }
+      const an = await runJobAndWait("analysis");
+      if (an.status !== "succeeded") {
+        setSyncMsg(`同期は完了、分析に失敗: ${an.error || an.status}`);
+        load();
+        return;
+      }
+      const rows = (rs.result as { rows_written?: number } | null)?.rows_written ?? 0;
+      setSyncMsg(`同期完了（${rows}行）・分析も更新しました。`);
+      load();
+    } catch (e) {
+      setSyncMsg((e as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   if (!domainId) return <ErrorNote>ドメインが指定されていません。</ErrorNote>;
   if (err) return <ErrorNote>読み込みに失敗しました: {err}</ErrorNote>;
@@ -107,7 +149,15 @@ function DomainInner() {
           >
             プロンプトを編集
           </Link>
+          <button
+            onClick={syncNow}
+            disabled={syncing}
+            className="text-accent hover:underline disabled:opacity-60"
+          >
+            {syncing ? "同期中…" : "🔄 Search Console と今すぐ同期"}
+          </button>
         </div>
+        {syncMsg && <div className="mt-2 text-[12px] text-ink2">{syncMsg}</div>}
       </Card>
 
       <SectionTitle>掲載順位の推移（90日・平均）</SectionTitle>
