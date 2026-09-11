@@ -89,6 +89,9 @@ def _fake(req: DraftRequest, model: str) -> DraftResult:
         f"<h2>選び方のポイント</h2>\n<h3>設置スペースで選ぶ</h3>\n<p>...</p>\n"
         f"<h2>おすすめ</h2>\n<h3>省スペースタイプ</h3>\n"
         f'[vc_auto_ads keyword="{kw} コンパクト" source=all limit=3]\n<p>...</p>\n'
+        f"<h2>まず結論｜早見表</h2>\n<table><tr><td>[[PRODUCT_TITLE:{kw} コンパクト]]</td>"
+        f"<td>[[PRODUCT_PRICE:{kw} コンパクト]]</td></tr></table>\n"
+        f"[[PRODUCT_BLOCK:{kw} コンパクト]]\n<p>...</p>\n"
         f"<h2>よくある質問</h2>\n<h3>Q. ...</h3>\n<p>A. ...</p>\n<h2>まとめ</h2>\n<p>...</p>"
     )
     return DraftResult(

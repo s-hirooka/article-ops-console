@@ -42,6 +42,17 @@ services:
         sync: false              # https://<service>.onrender.com/oauth/google/callback
       - key: DEV_ACCOUNT_ID
         value: "1"
+      # --- Amazon Creators API（旧PA-API後継）— 記事内の商品トークンを実在商品に自動置換 ---
+      - key: AMAZON_CREDENTIAL_ID
+        sync: false              # Associates Central → Creators API（amzn1.application-oa2-client.…）
+      - key: AMAZON_CREDENTIAL_SECRET
+        sync: false              # 同上（amzn1.oa2-cs.v1.…）
+      - key: AMAZON_PARTNER_TAG
+        sync: false              # トラッキングID（例: swork_seo-22）
+      - key: AMAZON_API_VERSION
+        value: "3.3"              # Creators API コンソール表示のバージョン（Far East/JP = 3.3）
+      - key: AMAZON_COUNTRY
+        value: "JP"
 
   # --- P5: Next.js frontend, static export, free Static Site (no sleep) ---
   - type: web

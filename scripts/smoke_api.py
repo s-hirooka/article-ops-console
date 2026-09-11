@@ -99,7 +99,7 @@ def _exercise() -> None:
         ("/api/domains/1/opportunities", 200, "押入れ 収納"),
         ("/api/domains/1/alerts", 200, "position_drop"),
         ("/api/domains/1/articles", 200, "CD収納アイデア10選"),
-        ("/api/domains/1/recommendations", 200, "new_article_ideas"),
+        ("/api/domains/1/recommendations", 200, "improvement_candidates"),
         ("/api/jobs", 200, "analysis"),
         ("/api/usage/llm", 200, '"spent_usd":0.092'),
         ("/api/usage/api", 200, "historical_metrics"),

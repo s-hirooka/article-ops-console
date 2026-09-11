@@ -1,5 +1,6 @@
 # --- P1: Windows依存の解消 ---
 google-ads>=25.1.0            # KeywordQueryRunner.exe の置き換え（GenerateKeywordHistoricalMetrics）
+python-amazon-paapi>=7.0.0    # Amazon Creators API（旧PA-API後継）— 実在商品を検索し記事に自動挿入
 python-dotenv>=1.0.1          # ローカル開発の .env 読み込み
 pillow>=11.0                  # アイキャッチ生成（Yu Gothic → Noto Sans JP）
 cryptography>=43.0            # OAuth リフレッシュトークンの暗号化（Fernet）

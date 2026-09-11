@@ -54,11 +54,18 @@ def publish_article(
     # edited body_html (e.g. corrected links) to the live post, or move a
     # published post back to draft.
 
-    if status == "publish" and "product_slot" in (art.body_html or ""):
+    body = art.body_html or ""
+    if status == "publish" and "[[PRODUCT_" in body:
         raise PublishError(
-            "本文に未確定の商品枠（product_slot）が残っています。AIは実在の商品URL/ASINを"
-            "生成できないため、公開前に本文中の該当プレースホルダーを実在の商品リンクに"
-            "置き換えてください（下書き保存は可能です）。"
+            "本文に未処理の商品トークン（[[PRODUCT_...]]）が残っています。生成時に"
+            "Amazon商品検索が失敗した可能性があります。公開前に本文を確認してください"
+            "（下書き保存は可能です）。"
+        )
+    if status == "publish" and "<!-- product not found" in body:
+        raise PublishError(
+            "本文に「商品が見つかりませんでした」の未解決箇所が残っています。AIは実在の"
+            "商品URL/ASINを生成できないため、公開前に本文中の該当箇所を実在の商品リンクに"
+            "手動で置き換えてください（下書き保存は可能です）。"
         )
 
     domain = session.get(m.Domain, art.domain_id)

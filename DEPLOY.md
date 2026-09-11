@@ -130,6 +130,13 @@ python -c "from app.security.crypto import generate_key; print(generate_key())"
    | `GOOGLE_OAUTH_REDIRECT_URI` | `https://<サービス名>.onrender.com/oauth/google/callback` |
    | `GOOGLE_OAUTH_CLIENT_ID` | （手順6で作成、後から追加でも可） |
    | `GOOGLE_OAUTH_CLIENT_SECRET` | 同上 |
+   | `AMAZON_CREDENTIAL_ID` | Amazon アソシエイト・セントラル → Creators API（`amzn1.application-oa2-client.…`） |
+   | `AMAZON_CREDENTIAL_SECRET` | 同上（`amzn1.oa2-cs.v1.…`） |
+   | `AMAZON_PARTNER_TAG` | トラッキングID（例: `swork_seo-22`） |
+
+   （`AMAZON_API_VERSION`=`3.3` と `AMAZON_COUNTRY`=`JP` は `render.yaml` に値入りで定義済み。
+   未設定のままだと記事生成時の商品自動挿入だけが失敗し、本文にはプレースホルダーが残る
+   ―― 生成自体は失敗しない。公開時に未解決のプレースホルダーが残っているとブロックされる。）
 
 5. デプロイ実行。ビルドは `pip install -r requirements.txt` のみ。
    **マイグレーションはビルドで走りません**（`app_user` に DDL 権限がないため）。

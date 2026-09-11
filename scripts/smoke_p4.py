@@ -26,6 +26,8 @@ os.environ.update(
     WP_FAKE="1",
     GSC_FAKE="1",
     GADS_FAKE="1",
+    AMAZON_FAKE="1",
+    AMAZON_PARTNER_TAG="swork_seo-22",
 )
 
 _fail = 0
@@ -91,6 +93,10 @@ def main() -> int:
     check("  body_html present", bool(adj.get("body_html")))
     check("  meta_description present", adj.get("meta_description") is not None)
     check("  domain_id present", adj.get("domain_id") == 1)
+    check("  no raw [[PRODUCT_ tokens left (Amazon fill ran)",
+          "[[PRODUCT_" not in adj["body_html"], adj["body_html"])
+    check("  fake Amazon product link present",
+          "amazon.co.jp/dp/B0FAKE" in adj["body_html"], adj["body_html"])
 
     r = c.post(f"/api/articles/{art_id}/publish", headers=H, json={"status": "draft"})
     check("publish status=draft -> 200", r.status_code == 200, r.text)

@@ -22,6 +22,7 @@ from app.db import models as m
 from app.services import budget, prompt_assembly
 from app.services.llm import DraftRequest, generate_draft
 from app.services.pricing import estimate_article_cost
+from app.services.product_fill import fill_products
 
 
 class PipelineError(RuntimeError):
@@ -150,6 +151,22 @@ def run_article_generate(
 
     eyecatch_bytes = _render_eyecatch(assembled.eyecatch_style, draft.title)
 
+    # Replace [[PRODUCT_*:検索語]] tokens (see product_block_spec prompt) with
+    # real Amazon products via the Creators API — the LLM never invents an
+    # ASIN. A phrase with no hit is left as an HTML comment and flagged below
+    # so the publish guard can catch it before it goes live with a gap.
+    body_html = draft.body_html
+    try:
+        fill = fill_products(body_html)
+        body_html = fill.html
+        if fill.unresolved:
+            warnings.append(
+                "商品が見つからなかった検索語があります（公開前に本文を確認）: "
+                + "、".join(fill.unresolved)
+            )
+    except Exception as exc:
+        warnings.append(f"Amazon 商品自動挿入に失敗しました（プレースホルダーのまま）: {exc}")
+
     article = m.Article(
         account_id=account_id,
         domain_id=domain_id,
@@ -159,7 +176,7 @@ def run_article_generate(
         target_search_volume=volume,
         title=draft.title,
         slug=draft.slug,
-        body_html=draft.body_html,
+        body_html=body_html,
         eyecatch_url=None,
         meta_json={
             "meta_description": draft.meta_description,
