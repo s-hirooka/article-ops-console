@@ -159,6 +159,10 @@ def main() -> int:
         for u in c.get("/api/usage/api").json()
     ))
     check("  recommended present", ti.get("recommended") is not None, str(ti.get("recommended")))
+    check("  recommended_top present and capped at 10",
+          0 < len(ti.get("recommended_top") or []) <= 10, str(ti.get("recommended_top")))
+    check("  recommended_top[0] == recommended",
+          (ti.get("recommended_top") or [{}])[0] == ti.get("recommended"))
     check("  wp_posts_checked > 0 (WP_FAKE post list used)", ti.get("wp_posts_checked", 0) > 0, str(ti))
     check("  cannibalization_excluded is int", isinstance(ti.get("cannibalization_excluded"), int), str(ti))
 

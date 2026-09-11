@@ -147,20 +147,26 @@ def _wp_post_titles(domain: m.Domain) -> list[str]:
     return [t for p in posts if (t := (p.get("title") or {}).get("rendered"))]
 
 
+def _balance_score(c: dict) -> float:
+    """Reach vs. difficulty — favors high volume with low competition rather
+    than just the highest-volume idea (which is usually also the most
+    competitive one)."""
+    vol = c.get("avg_monthly_searches") or 0
+    idx = c.get("competition_index")
+    idx = idx if idx is not None else 50
+    return vol / (1 + idx)
+
+
+def rank_top(candidates: list[dict], limit: int = 10) -> list[dict]:
+    """Candidates sorted best-first by the same balance score, capped to
+    ``limit`` — the shortlist a human should actually choose from."""
+    return sorted(candidates, key=_balance_score, reverse=True)[:limit]
+
+
 def pick_best(candidates: list[dict]) -> dict | None:
-    """A single recommended candidate — balances reach against difficulty
-    rather than just taking the highest-volume idea (which is usually also
-    the most competitive one)."""
-    if not candidates:
-        return None
-
-    def score(c: dict) -> float:
-        vol = c.get("avg_monthly_searches") or 0
-        idx = c.get("competition_index")
-        idx = idx if idx is not None else 50
-        return vol / (1 + idx)
-
-    return max(candidates, key=score)
+    """A single recommended candidate — the top of `rank_top`."""
+    top = rank_top(candidates, limit=1)
+    return top[0] if top else None
 
 
 def discover(
@@ -241,6 +247,7 @@ def discover(
         "cannibalization_excluded": cannibalization_excluded,
         "candidates": candidates,
         "recommended": pick_best(candidates),
+        "recommended_top": rank_top(candidates, limit=10),
     }
 
 

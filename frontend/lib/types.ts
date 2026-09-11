@@ -163,6 +163,7 @@ export interface TopicIdeas {
   cannibalization_excluded: number;
   candidates: TopicCandidate[];
   recommended: TopicCandidate | null;
+  recommended_top: TopicCandidate[];
 }
 
 export const PROMPT_COMPONENTS = [

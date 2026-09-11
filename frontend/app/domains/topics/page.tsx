@@ -15,7 +15,7 @@ import {
   TableWrap,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { DomainDetail, TopicIdeas } from "@/lib/types";
+import type { DomainDetail, TopicCandidate, TopicIdeas } from "@/lib/types";
 
 export default function TopicsPage() {
   return (
@@ -35,8 +35,12 @@ function TopicsInner() {
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState<TopicIdeas | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [autoBusy, setAutoBusy] = useState(false);
-  const [autoErr, setAutoErr] = useState<string | null>(null);
+
+  const [topRunning, setTopRunning] = useState(false);
+  const [topRes, setTopRes] = useState<TopicIdeas | null>(null);
+  const [topErr, setTopErr] = useState<string | null>(null);
+  const [genKeyword, setGenKeyword] = useState<string | null>(null);
+  const [genErr, setGenErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (domainId) api.domain(domainId).then(setD).catch(() => setD(null));
@@ -62,20 +66,37 @@ function TopicsInner() {
     }
   }
 
-  async function autoGenerate() {
-    setAutoBusy(true);
-    setAutoErr(null);
+  async function showRecommended() {
+    setTopRunning(true);
+    setTopErr(null);
+    setGenErr(null);
+    setTopRes(null);
     try {
-      // Fire-and-forget + poll, not a single blocking request: this job
-      // chains keyword discovery and LLM generation and can run past a
-      // minute, longer than Render's/the browser's connection will
-      // reliably stay open for one request — a slow-but-successful run
-      // was showing up client-side as "Failed to fetch" even though the
-      // job kept running server-side and actually finished.
+      setTopRes(await api.topicIdeas(domainId, { seeds: seedsFromText(), limit: 30 }));
+    } catch (e) {
+      setTopErr((e as Error).message);
+    } finally {
+      setTopRunning(false);
+    }
+  }
+
+  async function generateFor(c: TopicCandidate) {
+    setGenKeyword(c.keyword);
+    setGenErr(null);
+    try {
+      // Fire-and-forget + poll, not a single blocking request: article
+      // generation (LLM call) can run past a minute — longer than the
+      // browser/Render's proxy reliably holds one request open for — which
+      // otherwise surfaces as a bare "Failed to fetch" even though the job
+      // keeps running server-side and finishes fine.
       const started = await api.runJob({
-        kind: "topic_auto_generate",
+        kind: "article_generate",
         domain_id: domainId,
-        params: { seeds: seedsFromText(), _async: true },
+        params: {
+          target_keyword: c.keyword,
+          search_volume: c.avg_monthly_searches ?? undefined,
+          _async: true,
+        },
       });
       let job = await api.job(started.job_id);
       while (job.status === "queued" || job.status === "running") {
@@ -83,15 +104,15 @@ function TopicsInner() {
         job = await api.job(started.job_id);
       }
       if (job.status !== "succeeded") {
-        setAutoErr(job.error || "記事の自動作成に失敗しました。");
+        setGenErr(job.error || "記事の作成に失敗しました。");
         return;
       }
       const articleId = (job.result as { article_id?: number } | null)?.article_id;
       if (articleId) router.push(`/articles?id=${articleId}`);
     } catch (e) {
-      setAutoErr((e as Error).message);
+      setGenErr((e as Error).message);
     } finally {
-      setAutoBusy(false);
+      setGenKeyword(null);
     }
   }
 
@@ -127,23 +148,69 @@ function TopicsInner() {
           月間検索数 {d?.keyword_threshold ?? 500} 未満を除外します（API を1回消費）。
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={search} disabled={running || autoBusy}>
-            {running ? "探索中…" : "テーマを探す"}
+          <Button onClick={search} disabled={running || topRunning}>
+            {running ? "探索中…" : "テーマを探す（一覧）"}
           </Button>
-          <Button variant="ghost" onClick={autoGenerate} disabled={running || autoBusy}>
-            {autoBusy ? "作成中…（30〜60秒）" : "🔍 おすすめキーワードで記事を自動作成"}
+          <Button variant="ghost" onClick={showRecommended} disabled={running || topRunning}>
+            {topRunning ? "探索中…" : "🔍 おすすめキーワードを見る（上位10件）"}
           </Button>
         </div>
         <div className="text-[12px] text-ink2">
-          自動作成は候補の中から検索数と競合のバランスが良い1件を選び、そのまま記事生成まで
-          実行します（Anthropic API の実課金が発生します）。
+          おすすめキーワードは検索数と競合のバランスが良い順に10件表示します。キーワードを
+          クリックするとその語で記事生成まで実行します（Anthropic API の実課金が発生します）。
         </div>
       </Card>
 
-      {autoErr && (
+      {topErr && (
         <div className="mt-4">
-          <ErrorNote>{autoErr}</ErrorNote>
+          <ErrorNote>{topErr}</ErrorNote>
         </div>
+      )}
+      {genErr && (
+        <div className="mt-2">
+          <ErrorNote>{genErr}</ErrorNote>
+        </div>
+      )}
+
+      {topRes && (
+        <>
+          <SectionTitle>おすすめキーワード（上位{topRes.recommended_top.length}件）</SectionTitle>
+          <div className="mb-2 text-[12px] text-ink2">
+            シード: {topRes.seeds_used.join(" / ") || "—"} ・ アイデア {topRes.ideas_returned} 件から、
+            既出 {topRes.covered_keywords} 語・閾値未満・カニバリ疑い {topRes.cannibalization_excluded} 件
+            （WordPress既存記事 {topRes.wp_posts_checked} 件・下書き {topRes.own_drafts_checked} 件と照合）を除外
+          </div>
+          {topRes.recommended_top.length === 0 ? (
+            <Empty>
+              条件に合う新規候補は見つかりませんでした。シードを変えるか閾値を下げてください。
+            </Empty>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {topRes.recommended_top.map((c, i) => (
+                <button
+                  key={i}
+                  onClick={() => generateFor(c)}
+                  disabled={!!genKeyword}
+                  className="flex flex-col gap-1 rounded-lg border border-border bg-surface px-4 py-3 text-left transition hover:border-accent disabled:opacity-60"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{c.keyword}</span>
+                    <span className="shrink-0 text-[11px] text-ink2">
+                      {c.competition_level ?? "—"}
+                      {c.competition_index != null ? ` (${c.competition_index})` : ""}
+                    </span>
+                  </div>
+                  <div className="text-[12px] text-ink2">
+                    月間検索数 {c.avg_monthly_searches?.toLocaleString() ?? "—"}
+                  </div>
+                  <div className="mt-1 text-[12px] text-accent">
+                    {genKeyword === c.keyword ? "作成中…（30〜90秒）" : "この語で記事を作成 →"}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {err && (
@@ -158,7 +225,7 @@ function TopicsInner() {
           <div className="mb-2 text-[12px] text-ink2">
             シード: {res.seeds_used.join(" / ") || "—"} ・ アイデア {res.ideas_returned} 件から、
             既出 {res.covered_keywords} 語・閾値未満・カニバリ疑い {res.cannibalization_excluded} 件
-            （WordPress既存記事 {res.wp_posts_checked} 件と照合）を除外
+            （WordPress既存記事 {res.wp_posts_checked} 件・下書き {res.own_drafts_checked} 件と照合）を除外
           </div>
           {res.candidates.length === 0 ? (
             <Empty>
