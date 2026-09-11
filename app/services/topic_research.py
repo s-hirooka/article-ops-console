@@ -4,6 +4,8 @@ GSC only surfaces queries a page already ranks for. To find *uncovered* topics
 we expand seed terms via Google Ads' GenerateKeywordIdeas, then subtract:
   * keywords the domain already ranks for (keyword_rank_history)
   * keywords an existing/queued article already targets (articles.target_keyword)
+  * single broad head-term keywords (ビッグキーワード) — too competitive for
+    a small site, kept to 2+ significant words
 and keep those clearing the domain's monthly-search threshold.
 
 One Google Ads API call per run; recorded in api_usage.
@@ -200,12 +202,20 @@ def discover(
     # keep the best (highest-volume) idea per order-independent token set
     best: dict[frozenset[str], dict] = {}
     cannibalization_excluded = 0
+    single_word_excluded = 0
     for idea in ideas:
         vol = idea.avg_monthly_searches or 0
         if vol < threshold:
             continue
         nk = _norm(idea.keyword)
         key = _token_key(idea.keyword)
+        # single broad head terms ("本棚", "ラック", "オフィス") draw the
+        # biggest, best-established competitors — a small site doesn't win
+        # those. Requiring 2+ significant words pushes toward the longer-tail
+        # phrases an individual/small-team site actually has a shot at.
+        if len(key) < 2:
+            single_word_excluded += 1
+            continue
         # already ranking / already targeted: exact term, or the same set of
         # significant tokens (word-order / particle variants).
         if not nk or nk in covered or key in covered_keys:
@@ -245,6 +255,7 @@ def discover(
         "wp_posts_checked": len(wp_titles),
         "own_drafts_checked": len(own_titles),
         "cannibalization_excluded": cannibalization_excluded,
+        "single_word_excluded": single_word_excluded,
         "candidates": candidates,
         "recommended": pick_best(candidates),
         "recommended_top": rank_top(candidates, limit=10),
