@@ -181,10 +181,16 @@ def generate_title_revision(
     *,
     model: str = "claude-sonnet-5",
     api_key: str | None = None,
-    max_tokens: int = 1000,
+    max_tokens: int = 8000,
 ) -> TitleRevisionResult:
     """Title + meta_description only — for a CTR-focused revision that
-    deliberately leaves body_html untouched (see _SUBMIT_TITLE_TOOL)."""
+    deliberately leaves body_html untouched (see _SUBMIT_TITLE_TOOL).
+
+    max_tokens is generous relative to the tiny actual output: extended
+    thinking shares the same token budget as the response, and a first cut
+    at 1000 hit stop_reason="max_tokens" in production before the model ever
+    reached the tool call — cost tracks tokens actually used, not the cap,
+    so a high ceiling here is free insurance, not a bigger bill."""
     if _use_fake(api_key):
         return _fake_title(req, model)
 
