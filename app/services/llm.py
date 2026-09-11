@@ -1,8 +1,14 @@
 """Anthropic draft generation.
 
 One entry point, ``generate_draft``. It streams a single message (long output —
-streaming avoids request timeouts, per the claude-api skill), asks for a strict
-JSON object, and parses it into a ``DraftResult`` with token/cost accounting.
+streaming avoids request timeouts, per the claude-api skill) and gets the
+draft back as a tool call's structured input, not free-text JSON — body_html
+is raw HTML full of unescaped double quotes (``<a href="...">``,
+``class="..."``), and asking the model to hand-embed that as a valid JSON
+*string value* is fragile by construction: any imperfectly-escaped quote
+breaks ``json.loads`` (seen in production as ``Expecting ',' delimiter``).
+Anthropic's tool-use JSON encoding handles that correctly, so this sidesteps
+the whole failure class instead of trying to parse around it.
 
 Fake mode — ``LLM_FAKE=1`` or no API key available — returns a deterministic
 stub so the pipeline and its tests run offline with zero spend.
@@ -16,13 +22,25 @@ from dataclasses import dataclass
 
 from app.services.pricing import cost_usd
 
-_JSON_INSTRUCTION = (
-    "出力は次のキーを持つ JSON オブジェクトのみ。前後に説明文やコードフェンスを"
-    "付けないこと。\n"
-    '{"title": str, "slug": str(ascii-kebab), "meta_description": str(120字以内), '
-    '"outline": [str, ...], "body_html": str(WordPress本文, hタグと段落, '
-    "ショートコードはそのまま文字列で)}"
-)
+_SUBMIT_DRAFT_TOOL = {
+    "name": "submit_draft",
+    "description": "生成した記事下書きを提出する。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "slug": {"type": "string", "description": "ascii-kebab-case"},
+            "meta_description": {"type": "string", "description": "120字以内"},
+            "outline": {"type": "array", "items": {"type": "string"}},
+            "body_html": {
+                "type": "string",
+                "description": "WordPress本文。hタグと段落、ショートコードはそのまま文字列で。",
+            },
+        },
+        "required": ["title", "slug", "meta_description", "outline", "body_html"],
+    },
+}
+_TOOL_INSTRUCTION = "書き終えたら submit_draft ツールを呼び出し、上記の内容を渡してください。"
 
 
 @dataclass(frozen=True)
@@ -63,21 +81,8 @@ def _user_message(req: DraftRequest) -> str:
         )
     if req.extra_instructions:
         parts.append(req.extra_instructions)
-    parts.append(_JSON_INSTRUCTION)
+    parts.append(_TOOL_INSTRUCTION)
     return "\n\n".join(parts)
-
-
-def _parse_json_object(text: str) -> dict:
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-    try:
-        return json.loads(text)
-    except ValueError:
-        start, end = text.find("{"), text.rfind("}")
-        if start != -1 and end > start:
-            return json.loads(text[start : end + 1])
-        raise
 
 
 def _fake(req: DraftRequest, model: str) -> DraftResult:
@@ -138,6 +143,11 @@ def generate_draft(
         max_tokens=max_tokens,
         system=[{"type": "text", "text": req.system, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": _user_message(req)}],
+        tools=[_SUBMIT_DRAFT_TOOL],
+        # extended thinking only allows "auto" tool_choice (a forced choice
+        # isn't accepted alongside thinking) — fine here, one tool offered
+        # with clear instructions is reliably picked.
+        tool_choice={"type": "auto"},
     )
     try:
         with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
@@ -147,8 +157,18 @@ def generate_draft(
         with client.messages.stream(**kwargs) as stream:
             msg = stream.get_final_message()
 
-    text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
-    data = _parse_json_object(text)
+    tool_use = next(
+        (b for b in msg.content if getattr(b, "type", None) == "tool_use"
+         and getattr(b, "name", None) == "submit_draft"),
+        None,
+    )
+    if tool_use is None:
+        text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+        raise RuntimeError(
+            f"モデルが submit_draft を呼び出しませんでした（stop_reason={msg.stop_reason}）: "
+            f"{text[:300]}"
+        )
+    data = tool_use.input
 
     u = msg.usage
     in_tok = int(getattr(u, "input_tokens", 0) or 0)
