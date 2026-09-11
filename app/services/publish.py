@@ -54,6 +54,13 @@ def publish_article(
     # edited body_html (e.g. corrected links) to the live post, or move a
     # published post back to draft.
 
+    if status == "publish" and "product_slot" in (art.body_html or ""):
+        raise PublishError(
+            "本文に未確定の商品枠（product_slot）が残っています。AIは実在の商品URL/ASINを"
+            "生成できないため、公開前に本文中の該当プレースホルダーを実在の商品リンクに"
+            "置き換えてください（下書き保存は可能です）。"
+        )
+
     domain = session.get(m.Domain, art.domain_id)
     if domain is None:
         raise PublishError("domain が見つかりません。")
