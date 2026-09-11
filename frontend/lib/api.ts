@@ -137,10 +137,14 @@ export const api = {
     }>(`/api/articles/${articleId}/publish`, { method: "POST", json: { status } }),
 
   fillProducts: (articleId: number) =>
-    req<{ article_id: number; changed: boolean; filled: string[]; unresolved: string[] }>(
-      `/api/articles/${articleId}/fill-products`,
-      { method: "POST" },
-    ),
+    req<{
+      article_id: number;
+      changed: boolean;
+      filled: string[];
+      unresolved: string[];
+      related_linked: string[];
+      related_slots_left_empty: number;
+    }>(`/api/articles/${articleId}/fill-products`, { method: "POST" }),
 
   usageLlm: () => req<UsageLlm>("/api/usage/llm"),
   usageApi: () =>

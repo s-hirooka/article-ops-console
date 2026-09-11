@@ -139,26 +139,58 @@ def edit_article(
 
 
 def refill_article(session: Session, *, account_id: int, article_id: int) -> dict:
-    """Re-run product-token resolution against an existing article's current
-    body_html and save the result. For an article stuck with placeholders —
-    generated before this feature existed, generated while Amazon search was
-    down, or still carrying legacy product_slot comments because the domain's
-    prompt hasn't been re-seeded to the token format yet."""
+    """Re-run product-token AND related-article-link resolution against an
+    existing article's current body_html and save the result. For an article
+    stuck with placeholders — generated before these features existed,
+    generated while Amazon search or the WordPress lookup was down, or still
+    carrying legacy product_slot / freeform-comment placeholders because the
+    domain's prompts haven't been re-seeded to the token format yet."""
     art = session.get(m.Article, article_id)
     if art is None or art.account_id != account_id:
         raise ProductFillError("article が見つかりません。")
 
     before = art.body_html or ""
     result = fill_products(before)
-    art.body_html = result.html
+    body = result.html
+    related_linked: list[str] = []
+    related_empty = 0
+
+    domain = session.get(m.Domain, art.domain_id)
+    if domain is not None:
+        try:
+            from app.integrations.wordpress import WordPressClient
+            from app.services.internal_link_fill import fill_related_links
+            from app.services.publish import wp_creds_for_domain
+
+            wp = WordPressClient(wp_creds_for_domain(domain))
+            related = fill_related_links(
+                body,
+                wp=wp,
+                topic_text=f"{art.title or ''} {art.target_keyword or ''}",
+                exclude_post_id=art.wp_post_id,
+            )
+            body = related.html
+            related_linked = related.linked
+            related_empty = related.slots_left_empty
+        except Exception:
+            pass
+
+    art.body_html = body
     meta = dict(art.meta_json or {})
     warnings = [
-        w for w in meta.get("warnings", []) if "商品が見つからなかった検索語" not in w
+        w
+        for w in meta.get("warnings", [])
+        if "商品が見つからなかった検索語" not in w and "あわせて読みたい" not in w
     ]
     if result.unresolved:
         warnings.append(
             "商品が見つからなかった検索語があります（公開前に本文を確認）: "
             + "、".join(result.unresolved)
+        )
+    if related_empty:
+        warnings.append(
+            f"あわせて読みたい: 一致する関連記事が見つからない枠が{related_empty}件あります"
+            "（公開前に本文を確認）。"
         )
     meta["warnings"] = warnings
     art.meta_json = meta
@@ -166,7 +198,9 @@ def refill_article(session: Session, *, account_id: int, article_id: int) -> dic
 
     return {
         "article_id": art.id,
-        "changed": result.html != before,
+        "changed": body != before,
         "filled": result.filled,
         "unresolved": result.unresolved,
+        "related_linked": related_linked,
+        "related_slots_left_empty": related_empty,
     }

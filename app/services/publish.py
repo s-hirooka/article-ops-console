@@ -23,7 +23,7 @@ class PublishError(RuntimeError):
     pass
 
 
-def _creds(domain: m.Domain) -> WordPressCreds:
+def wp_creds_for_domain(domain: m.Domain) -> WordPressCreds:
     if os.environ.get("WP_FAKE") == "1":
         return WordPressCreds(domain.wp_base_url or domain.base_url, "fake", "fake")
     if not (domain.wp_base_url and domain.wp_username and domain.wp_app_password_enc):
@@ -73,12 +73,24 @@ def publish_article(
             "「Amazon商品を自動挿入」を再実行するか、本文を手動で修正してください"
             "（下書き保存は可能です）。"
         )
+    if status == "publish" and "[[RELATED_ARTICLE" in body:
+        raise PublishError(
+            "本文に未処理の関連記事トークン（[[RELATED_ARTICLE...]]）が残っています。"
+            "「Amazon商品を自動挿入」を再実行するか、本文を手動で修正してください"
+            "（下書き保存は可能です）。"
+        )
+    if status == "publish" and re.search(r"<li>\s*<!--", body):
+        raise PublishError(
+            "本文の「あわせて読みたい」に、リンクのない未解決の箇所（コメントのみの"
+            "<li>）が残っています。「Amazon商品を自動挿入」を再実行するか、本文を"
+            "手動で修正してください（下書き保存は可能です）。"
+        )
 
     domain = session.get(m.Domain, art.domain_id)
     if domain is None:
         raise PublishError("domain が見つかりません。")
 
-    client = WordPressClient(_creds(domain))
+    client = WordPressClient(wp_creds_for_domain(domain))
     meta = dict(art.meta_json or {})
     style = {}
     # domain's eyecatch_style prompt component, if any
@@ -171,7 +183,7 @@ def delete_article(
     if art.wp_post_id:
         domain = session.get(m.Domain, art.domain_id)
         try:
-            client = WordPressClient(_creds(domain)) if domain else None
+            client = WordPressClient(wp_creds_for_domain(domain)) if domain else None
             if client is None:
                 warnings.append("domain 不明のため WordPress 側は未変更。")
             elif trash_wp:

@@ -167,6 +167,29 @@ def run_article_generate(
     except Exception as exc:
         warnings.append(f"Amazon 商品自動挿入に失敗しました（プレースホルダーのまま）: {exc}")
 
+    # Same idea for "あわせて読みたい": the LLM can't know real permalinks, so
+    # internal_link_policy asks it to leave the list unresolved and this step
+    # fills it from the domain's actually-published WordPress posts. Skipped
+    # gracefully if WP credentials aren't set — the placeholder just stays,
+    # same as an Amazon lookup failure.
+    try:
+        from app.integrations.wordpress import WordPressClient
+        from app.services.internal_link_fill import fill_related_links
+        from app.services.publish import wp_creds_for_domain
+
+        wp = WordPressClient(wp_creds_for_domain(domain))
+        related = fill_related_links(
+            body_html, wp=wp, topic_text=f"{draft.title} {target_keyword}"
+        )
+        body_html = related.html
+        if related.slots_left_empty:
+            warnings.append(
+                f"あわせて読みたい: 一致する関連記事が見つからない枠が"
+                f"{related.slots_left_empty}件あります（公開前に本文を確認）。"
+            )
+    except Exception as exc:
+        warnings.append(f"関連記事の自動リンク付けに失敗しました（プレースホルダーのまま）: {exc}")
+
     article = m.Article(
         account_id=account_id,
         domain_id=domain_id,

@@ -102,6 +102,26 @@ class WordPressClient:
         q = f"?_fields={','.join(fields)}" if fields else ""
         return self._request("GET", f"/wp-json/wp/v2/posts/{post_id}{q}")
 
+    def list_posts(self, *, per_page: int = 100, exclude: int | None = None) -> list[dict]:
+        """Published posts (id/link/title only) for internal-link matching.
+        Public REST data — works with any valid credentials regardless of
+        their write scope."""
+        if _fake():
+            base = self._c.base_url
+            return [
+                {"id": 101, "link": f"{base}/fake-related-a/",
+                 "title": {"rendered": "フェイク関連記事A｜収納のコツ"}},
+                {"id": 102, "link": f"{base}/fake-related-b/",
+                 "title": {"rendered": "フェイク関連記事B｜収納グッズ比較"}},
+                {"id": 103, "link": f"{base}/fake-related-c/",
+                 "title": {"rendered": "フェイク関連記事C｜掃除のコツ"}},
+            ]
+        q = f"?per_page={per_page}&status=publish&_fields=id,link,title"
+        if exclude:
+            q += f"&exclude={exclude}"
+        result = self._request("GET", f"/wp-json/wp/v2/posts{q}")
+        return result if isinstance(result, list) else []
+
     def trash_post(self, post_id: int) -> dict:
         """Move a post to the trash (recoverable). Not a permanent delete."""
         if _fake():

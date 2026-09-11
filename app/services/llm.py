@@ -92,7 +92,11 @@ def _fake(req: DraftRequest, model: str) -> DraftResult:
         f"<h2>まず結論｜早見表</h2>\n<table><tr><td>[[PRODUCT_TITLE:{kw} コンパクト]]</td>"
         f"<td>[[PRODUCT_PRICE:{kw} コンパクト]]</td></tr></table>\n"
         f"[[PRODUCT_BLOCK:{kw} コンパクト]]\n<p>...</p>\n"
-        f"<h2>よくある質問</h2>\n<h3>Q. ...</h3>\n<p>A. ...</p>\n<h2>まとめ</h2>\n<p>...</p>"
+        f"<h2>よくある質問</h2>\n<h3>Q. ...</h3>\n<p>A. ...</p>\n<h2>まとめ</h2>\n<p>...</p>\n"
+        f"<h2>あわせて読みたい</h2>\n<ul>\n"
+        f"<li><!-- 関連記事1: 実在のパーマリンクが確定したらここにリンクを追加してください --></li>\n"
+        f"<li><!-- 関連記事2: 実在のパーマリンクが確定したらここにリンクを追加してください --></li>\n"
+        f"</ul>"
     )
     return DraftResult(
         title=f"{kw}のおすすめと選び方【保存版】",

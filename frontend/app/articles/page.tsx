@@ -60,14 +60,12 @@ function ArticleInner() {
     setMsg(null);
     try {
       const r = await api.fillProducts(articleId);
-      setMsg(
-        r.filled.length
-          ? `Amazon商品を差し替えました: ${r.filled.join("、")}` +
-              (r.unresolved.length ? ` ／ 見つからず: ${r.unresolved.join("、")}` : "")
-          : r.unresolved.length
-            ? `商品が見つかりませんでした: ${r.unresolved.join("、")}`
-            : "商品プレースホルダーはありませんでした（変更なし）",
-      );
+      const parts: string[] = [];
+      if (r.filled.length) parts.push(`Amazon商品: ${r.filled.join("、")}`);
+      if (r.unresolved.length) parts.push(`商品が見つからず: ${r.unresolved.join("、")}`);
+      if (r.related_linked.length) parts.push(`関連記事: ${r.related_linked.join("、")}`);
+      if (r.related_slots_left_empty) parts.push(`関連記事が見つからない枠: ${r.related_slots_left_empty}件`);
+      setMsg(parts.length ? parts.join(" ／ ") : "差し替える箇所はありませんでした（変更なし）");
       load();
     } catch (e) {
       setMsg(`失敗: ${(e as Error).message}`);
@@ -141,7 +139,7 @@ function ArticleInner() {
           {busy === "draft" ? "保存中…" : "WordPress に下書き保存"}
         </Button>
         <Button variant="ghost" onClick={doFillProducts} disabled={!!busy}>
-          {busy === "fill" ? "検索中…" : "Amazon商品を自動挿入"}
+          {busy === "fill" ? "検索中…" : "商品・関連記事リンクを自動挿入"}
         </Button>
         <Button variant="ghost" onClick={doDelete} disabled={!!busy}>
           {busy === "delete" ? "削除中…" : "削除"}

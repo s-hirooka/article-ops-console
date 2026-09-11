@@ -345,7 +345,8 @@ def fill_products_endpoint(
     session: Session = Depends(db),
 ) -> dict:
     """本文に残っている商品プレースホルダー（新形式のトークン・旧形式の
-    product_slot コメントのどちらも）を、Amazon Creators API で実在商品に
+    product_slot コメントのどちらも）を Amazon Creators API で実在商品に、
+    「あわせて読みたい」の未解決プレースホルダーを実在の WordPress 記事に
     差し替えて保存し直す。生成時の検索失敗やプロンプト更新前の記事を後から
     直すためのエンドポイント。"""
     from app.services.product_fill import ProductFillError, refill_article
