@@ -107,6 +107,29 @@ def _derive_seeds(session: Session, domain_id: int, domain_key: str) -> list[str
     return seeds or [domain_key.replace("-", " ")]
 
 
+def _own_article_titles(session: Session, domain_id: int) -> list[str]:
+    """This domain's own articles in the console — including drafts.
+
+    Real gap this closes: a draft that hasn't been published yet has no
+    WordPress post (so `_wp_post_titles` can't see it) and its
+    `target_keyword` often won't exact/token-match a *new* candidate keyword
+    for the same topic (e.g. target_keyword="オフィス" vs a fresh candidate
+    "オフィス 365" — different token sets, same real-world topic once written
+    up). Checking the actual generated *titles* by bigram overlap catches
+    that the way it already catches WordPress-post duplicates.
+    """
+    return [
+        t
+        for (t,) in session.execute(
+            select(m.Article.title).where(
+                m.Article.domain_id == domain_id,
+                m.Article.title.is_not(None),
+            )
+        ).all()
+        if t
+    ]
+
+
 def _wp_post_titles(domain: m.Domain) -> list[str]:
     """The domain's published post titles, straight from WordPress — catches
     topics already covered by posts that predate this console (so were never
@@ -165,7 +188,8 @@ def discover(
     threshold = domain.keyword_threshold
 
     wp_titles = _wp_post_titles(domain)
-    wp_title_bigrams = [bigrams(t) for t in wp_titles]
+    own_titles = _own_article_titles(session, domain_id)
+    wp_title_bigrams = [bigrams(t) for t in wp_titles + own_titles]
 
     # keep the best (highest-volume) idea per order-independent token set
     best: dict[frozenset[str], dict] = {}
@@ -213,6 +237,7 @@ def discover(
         "ideas_returned": len(ideas),
         "covered_keywords": len(covered),
         "wp_posts_checked": len(wp_titles),
+        "own_drafts_checked": len(own_titles),
         "cannibalization_excluded": cannibalization_excluded,
         "candidates": candidates,
         "recommended": pick_best(candidates),
