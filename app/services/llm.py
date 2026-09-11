@@ -261,8 +261,16 @@ def generate_draft(
     *,
     model: str = "claude-sonnet-5",
     api_key: str | None = None,
-    max_tokens: int = 12000,
+    max_tokens: int = 20000,
 ) -> DraftResult:
+    """max_tokens is generous relative to a typical article: extended
+    thinking shares the same token budget as the tool-call output, and a
+    revision brief embedding the *entire existing article* as context (see
+    article_improve.py's "rewrite" path) pushes both input and the expected
+    output well past a fresh-generation draft's size. Seen in production
+    hitting stop_reason="max_tokens" with the old 12000 default — the model
+    had filled title/slug/meta_description/outline and never got to
+    body_html at all. Cost tracks tokens actually used, not the cap."""
     if _use_fake(api_key):
         return _fake(req, model)
 

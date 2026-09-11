@@ -178,6 +178,11 @@ def run_improve(
                          vc_auto_ads_defaults=assembled.vc_auto_ads_defaults,
                          extra_instructions=extra),
             model=model, api_key=byok,
+            # extra headroom beyond generate_draft's own default: this
+            # embeds the *entire existing article* as context on top of the
+            # revision brief, so both input and expected output run larger
+            # than a fresh-generation draft.
+            max_tokens=28000,
         )
         cost_usd, faked = draft.cost_usd, draft.faked
         budget.record_usage(
