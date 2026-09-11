@@ -310,6 +310,23 @@ def publish_article_endpoint(
         raise HTTPException(422, str(exc))
 
 
+@router.post("/articles/{article_id}/fill-products")
+def fill_products_endpoint(
+    article_id: int,
+    session: Session = Depends(db),
+) -> dict:
+    """本文に残っている商品プレースホルダー（新形式のトークン・旧形式の
+    product_slot コメントのどちらも）を、Amazon Creators API で実在商品に
+    差し替えて保存し直す。生成時の検索失敗やプロンプト更新前の記事を後から
+    直すためのエンドポイント。"""
+    from app.services.product_fill import ProductFillError, refill_article
+
+    try:
+        return refill_article(session, account_id=_aid(session), article_id=article_id)
+    except ProductFillError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @router.delete("/articles/{article_id}")
 def delete_article_endpoint(
     article_id: int,

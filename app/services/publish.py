@@ -67,6 +67,12 @@ def publish_article(
             "商品URL/ASINを生成できないため、公開前に本文中の該当箇所を実在の商品リンクに"
             "手動で置き換えてください（下書き保存は可能です）。"
         )
+    if status == "publish" and "product_slot" in body:
+        raise PublishError(
+            "本文に旧形式の商品プレースホルダー（product_slot）が残っています。"
+            "「Amazon商品を自動挿入」を再実行するか、本文を手動で修正してください"
+            "（下書き保存は可能です）。"
+        )
 
     domain = session.get(m.Domain, art.domain_id)
     if domain is None:

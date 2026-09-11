@@ -55,6 +55,27 @@ function ArticleInner() {
     }
   }
 
+  async function doFillProducts() {
+    setBusy("fill");
+    setMsg(null);
+    try {
+      const r = await api.fillProducts(articleId);
+      setMsg(
+        r.filled.length
+          ? `Amazon商品を差し替えました: ${r.filled.join("、")}` +
+              (r.unresolved.length ? ` ／ 見つからず: ${r.unresolved.join("、")}` : "")
+          : r.unresolved.length
+            ? `商品が見つかりませんでした: ${r.unresolved.join("、")}`
+            : "商品プレースホルダーはありませんでした（変更なし）",
+      );
+      load();
+    } catch (e) {
+      setMsg(`失敗: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function doDelete() {
     const trashWp =
       !!a?.wp_post_id &&
@@ -118,6 +139,9 @@ function ArticleInner() {
         </Button>
         <Button variant="ghost" onClick={() => doPublish("draft")} disabled={!!busy}>
           {busy === "draft" ? "保存中…" : "WordPress に下書き保存"}
+        </Button>
+        <Button variant="ghost" onClick={doFillProducts} disabled={!!busy}>
+          {busy === "fill" ? "検索中…" : "Amazon商品を自動挿入"}
         </Button>
         <Button variant="ghost" onClick={doDelete} disabled={!!busy}>
           {busy === "delete" ? "削除中…" : "削除"}

@@ -136,6 +136,12 @@ export const api = {
       warnings: string[];
     }>(`/api/articles/${articleId}/publish`, { method: "POST", json: { status } }),
 
+  fillProducts: (articleId: number) =>
+    req<{ article_id: number; changed: boolean; filled: string[]; unresolved: string[] }>(
+      `/api/articles/${articleId}/fill-products`,
+      { method: "POST" },
+    ),
+
   usageLlm: () => req<UsageLlm>("/api/usage/llm"),
   usageApi: () =>
     req<{ provider: string; operation: string; calls: number }[]>("/api/usage/api"),
