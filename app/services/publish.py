@@ -96,7 +96,18 @@ def publish_article(
                 featured_media=featured_media,
             )
     except WordPressError as exc:
-        raise PublishError(f"WordPress への投稿に失敗しました: {exc}") from exc
+        detail = f": {exc.body[:400]}" if getattr(exc, "body", None) else ""
+        hint = ""
+        if exc.status_code == 403:
+            hint = (
+                " ｜ 403 はサーバー側の拒否です。日本の共有ホスティングの"
+                "「国外IPアクセス制限」やセキュリティプラグイン(WAF)が REST API の"
+                "書き込みを海外(Render)からブロックしている可能性が高いです。"
+                "国外IP制限を解除するか、/wp-json/ を除外設定してください。"
+            )
+        raise PublishError(
+            f"WordPress への投稿に失敗しました ({exc.status_code}){detail}{hint}"
+        ) from exc
 
     art.wp_post_id = int(resp.get("id") or art.wp_post_id or 0) or None
     art.eyecatch_url = eyecatch_url
