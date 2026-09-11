@@ -64,6 +64,17 @@ def _covered_raw(session: Session, account_id: int, domain_id: int) -> list[str]
 
 
 def _derive_seeds(session: Session, domain_id: int, domain_key: str) -> list[str]:
+    """Seeds for Google Ads' idea service when the caller doesn't supply any.
+
+    Deliberately NOT the top GSC queries themselves: asking for "ideas like
+    <a long-tail query we already rank for>" mostly returns near-duplicates
+    of that same query, which then all get filtered out as already-covered —
+    the auto-discovery flow would return zero candidates almost every time.
+    Instead, seed with the significant *tokens* behind those queries (impression-
+    weighted), which are broad enough to surface genuinely different themes;
+    token-key coverage-matching only excludes an idea that shares the *entire*
+    token set with something covered, so a single shared token is harmless.
+    """
     rows = session.execute(
         select(
             m.KeywordRankHistory.keyword,
@@ -72,12 +83,35 @@ def _derive_seeds(session: Session, domain_id: int, domain_key: str) -> list[str
         .where(m.KeywordRankHistory.domain_id == domain_id)
         .group_by(m.KeywordRankHistory.keyword)
         .order_by(func.sum(m.KeywordRankHistory.impressions).desc())
-        .limit(8)
+        .limit(20)
     ).all()
-    seeds = [k for k, _ in rows if k]
-    if not seeds:
-        seeds = [domain_key.replace("-", " ")]
-    return seeds
+    if not rows:
+        return [domain_key.replace("-", " ")]
+
+    weight: dict[str, int] = {}
+    for kw, imp in rows:
+        for tok in re.split(r"\s+", unicodedata.normalize("NFKC", kw or "")):
+            if len(tok) < 2 or tok in _PARTICLES:
+                continue
+            weight[tok] = weight.get(tok, 0) + int(imp or 0)
+    seeds = [t for t, _ in sorted(weight.items(), key=lambda kv: -kv[1])[:8]]
+    return seeds or [domain_key.replace("-", " ")]
+
+
+def pick_best(candidates: list[dict]) -> dict | None:
+    """A single recommended candidate — balances reach against difficulty
+    rather than just taking the highest-volume idea (which is usually also
+    the most competitive one)."""
+    if not candidates:
+        return None
+
+    def score(c: dict) -> float:
+        vol = c.get("avg_monthly_searches") or 0
+        idx = c.get("competition_index")
+        idx = idx if idx is not None else 50
+        return vol / (1 + idx)
+
+    return max(candidates, key=score)
 
 
 def discover(
@@ -142,6 +176,7 @@ def discover(
         "ideas_returned": len(ideas),
         "covered_keywords": len(covered),
         "candidates": candidates,
+        "recommended": pick_best(candidates),
     }
 
 

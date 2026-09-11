@@ -21,7 +21,10 @@ from app.services import prompt_assembly
 from app.services.article_pipeline import PipelineError, run_article_generate
 from app.services.budget import BudgetExceeded
 
-VALID_KINDS = {"article_generate", "rank_sync", "analysis", "eyecatch", "test_prompt"}
+VALID_KINDS = {
+    "article_generate", "rank_sync", "analysis", "eyecatch", "test_prompt",
+    "topic_auto_generate",
+}
 
 
 def enqueue(
@@ -131,6 +134,45 @@ def _dispatch(s: Session, job: m.Job) -> dict:
             "search_volume": res.search_volume,
             "keyword_threshold": res.keyword_threshold,
             "eyecatch_bytes": res.eyecatch_bytes,
+            "warnings": res.warnings,
+        }
+
+    if job.kind == "topic_auto_generate":
+        from app.services import topic_research
+
+        domain_id = job.domain_id or int(p["domain_id"])
+        discovery = topic_research.discover(
+            s,
+            account_id=job.account_id,
+            domain_id=domain_id,
+            seeds=p.get("seeds") or [],
+            page_url=p.get("page_url"),
+        )
+        best = discovery.get("recommended")
+        if best is None:
+            raise PipelineError(
+                "新規テーマの候補が見つかりませんでした（シード語を指定して"
+                "「新規テーマ探索」画面から再試行してください）。"
+            )
+        res = run_article_generate(
+            s,
+            account_id=job.account_id,
+            domain_id=domain_id,
+            target_keyword=best["keyword"],
+            created_by=job.created_by,
+            job_id=job.id,
+            search_volume=best.get("avg_monthly_searches"),
+        )
+        job.llm_cost_usd = res.cost_usd
+        return {
+            "selected_keyword": best,
+            "candidates_considered": len(discovery["candidates"]),
+            "seeds_used": discovery["seeds_used"],
+            "article_id": res.article_id,
+            "title": res.title,
+            "slug": res.slug,
+            "cost_usd": res.cost_usd,
+            "faked": res.faked,
             "warnings": res.warnings,
         }
 

@@ -158,6 +158,24 @@ def main() -> int:
         u["provider"] == "google_ads" and u["operation"] == "keyword_ideas"
         for u in c.get("/api/usage/api").json()
     ))
+    check("  recommended present", ti.get("recommended") is not None, str(ti.get("recommended")))
+
+    # --- topic_auto_generate (キーワード自動探索→記事作成を一括) --------
+    r = c.post("/api/jobs", headers=H, json={
+        "kind": "topic_auto_generate", "domain_id": 1,
+        "params": {"seeds": ["すきま収納"]}})
+    check("topic_auto_generate -> 201", r.status_code == 201, r.text)
+    tj = r.json()
+    check("  succeeded", tj["status"] == "succeeded", str(tj))
+    tres = tj.get("result") or {}
+    check("  selected_keyword present", bool((tres.get("selected_keyword") or {}).get("keyword")), str(tres))
+    check("  article_id present", isinstance(tres.get("article_id"), int), str(tres))
+    auto_art = c.get(f"/api/articles/{tres.get('article_id')}", headers=H)
+    check("  generated article fetchable", auto_art.status_code == 200)
+
+    # missing domain_id is rejected before dispatch
+    r = c.post("/api/jobs", headers=H, json={"kind": "topic_auto_generate", "params": {}})
+    check("topic_auto_generate without domain_id -> 422", r.status_code == 422, r.text)
 
     # --- eyecatch job -----------------------------------------------
     r = c.post("/api/jobs", headers=H, json={

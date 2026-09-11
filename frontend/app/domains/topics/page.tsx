@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import {
   Button,
@@ -27,6 +27,7 @@ export default function TopicsPage() {
 
 function TopicsInner() {
   const sp = useSearchParams();
+  const router = useRouter();
   const domainId = Number(sp.get("id"));
 
   const [d, setD] = useState<DomainDetail | null>(null);
@@ -34,25 +35,52 @@ function TopicsInner() {
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState<TopicIdeas | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoErr, setAutoErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (domainId) api.domain(domainId).then(setD).catch(() => setD(null));
   }, [domainId]);
+
+  function seedsFromText(): string[] {
+    return seedText
+      .split(/[\n,、]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
 
   async function search() {
     setRunning(true);
     setErr(null);
     setRes(null);
     try {
-      const seeds = seedText
-        .split(/[\n,、]/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      setRes(await api.topicIdeas(domainId, { seeds, limit: 30 }));
+      setRes(await api.topicIdeas(domainId, { seeds: seedsFromText(), limit: 30 }));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function autoGenerate() {
+    setAutoBusy(true);
+    setAutoErr(null);
+    try {
+      const r = await api.runJob({
+        kind: "topic_auto_generate",
+        domain_id: domainId,
+        params: { seeds: seedsFromText() },
+      });
+      if (r.status !== "succeeded") {
+        setAutoErr(r.error || "記事の自動作成に失敗しました。");
+        return;
+      }
+      const articleId = (r.result as { article_id?: number } | null)?.article_id;
+      if (articleId) router.push(`/articles?id=${articleId}`);
+    } catch (e) {
+      setAutoErr((e as Error).message);
+    } finally {
+      setAutoBusy(false);
     }
   }
 
@@ -87,12 +115,25 @@ function TopicsInner() {
           Google Ads のキーワードアイデアを取得し、既にランク済み・記事化済みの語と
           月間検索数 {d?.keyword_threshold ?? 500} 未満を除外します（API を1回消費）。
         </div>
-        <div>
-          <Button onClick={search} disabled={running}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={search} disabled={running || autoBusy}>
             {running ? "探索中…" : "テーマを探す"}
           </Button>
+          <Button variant="ghost" onClick={autoGenerate} disabled={running || autoBusy}>
+            {autoBusy ? "作成中…（30〜60秒）" : "🔍 おすすめキーワードで記事を自動作成"}
+          </Button>
+        </div>
+        <div className="text-[12px] text-ink2">
+          自動作成は候補の中から検索数と競合のバランスが良い1件を選び、そのまま記事生成まで
+          実行します（Anthropic API の実課金が発生します）。
         </div>
       </Card>
+
+      {autoErr && (
+        <div className="mt-4">
+          <ErrorNote>{autoErr}</ErrorNote>
+        </div>
+      )}
 
       {err && (
         <div className="mt-4">
@@ -123,8 +164,18 @@ function TopicsInner() {
               </thead>
               <tbody>
                 {res.candidates.map((c, i) => (
-                  <tr key={i}>
-                    <Td>{c.keyword}</Td>
+                  <tr
+                    key={i}
+                    className={c.keyword === res.recommended?.keyword ? "bg-accent/5" : ""}
+                  >
+                    <Td>
+                      {c.keyword}
+                      {c.keyword === res.recommended?.keyword && (
+                        <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-[11px] text-accent">
+                          おすすめ
+                        </span>
+                      )}
+                    </Td>
                     <Td num>{c.avg_monthly_searches?.toLocaleString() ?? "—"}</Td>
                     <Td className="text-[12px] text-ink2">
                       {c.competition_level ?? "—"}

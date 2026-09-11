@@ -145,18 +145,21 @@ export interface PromptComponent {
   edited_by: number | null;
 }
 
+export interface TopicCandidate {
+  keyword: string;
+  avg_monthly_searches: number | null;
+  competition_level: string | null;
+  competition_index: number | null;
+}
+
 export interface TopicIdeas {
   domain_id: number;
   seeds_used: string[];
   threshold: number;
   ideas_returned: number;
   covered_keywords: number;
-  candidates: {
-    keyword: string;
-    avg_monthly_searches: number | null;
-    competition_level: string | null;
-    competition_index: number | null;
-  }[];
+  candidates: TopicCandidate[];
+  recommended: TopicCandidate | null;
 }
 
 export const PROMPT_COMPONENTS = [
