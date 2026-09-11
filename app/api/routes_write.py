@@ -310,6 +310,35 @@ def publish_article_endpoint(
         raise HTTPException(422, str(exc))
 
 
+class ArticleEditIn(BaseModel):
+    body_html: str | None = None
+    title: str | None = None
+    meta_description: str | None = None
+
+
+@router.patch("/articles/{article_id}")
+def edit_article_endpoint(
+    article_id: int,
+    body: ArticleEditIn,
+    session: Session = Depends(db),
+) -> dict:
+    """本文・タイトル・メタディスクリプションの手動編集（ローカルのみ、
+    WordPress へは反映されない — 別途 /publish を呼ぶ）。"""
+    from app.services.product_fill import ProductFillError, edit_article
+
+    try:
+        return edit_article(
+            session,
+            account_id=_aid(session),
+            article_id=article_id,
+            body_html=body.body_html,
+            title=body.title,
+            meta_description=body.meta_description,
+        )
+    except ProductFillError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @router.post("/articles/{article_id}/fill-products")
 def fill_products_endpoint(
     article_id: int,

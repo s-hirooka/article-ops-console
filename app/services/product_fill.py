@@ -110,6 +110,34 @@ def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
     return FillResult(html=html, filled=filled, unresolved=unresolved)
 
 
+def edit_article(
+    session: Session,
+    *,
+    account_id: int,
+    article_id: int,
+    body_html: str | None = None,
+    title: str | None = None,
+    meta_description: str | None = None,
+) -> dict:
+    """Manual edit of an already-generated article (e.g. hand-fixing a section
+    the automated product fill couldn't resolve). Local-only change — call the
+    publish endpoint separately to push it to WordPress."""
+    art = session.get(m.Article, article_id)
+    if art is None or art.account_id != account_id:
+        raise ProductFillError("article が見つかりません。")
+
+    if body_html is not None:
+        art.body_html = body_html
+    if title is not None:
+        art.title = title
+    if meta_description is not None:
+        meta = dict(art.meta_json or {})
+        meta["meta_description"] = meta_description
+        art.meta_json = meta
+    session.flush()
+    return {"article_id": art.id, "updated": True}
+
+
 def refill_article(session: Session, *, account_id: int, article_id: int) -> dict:
     """Re-run product-token resolution against an existing article's current
     body_html and save the result. For an article stuck with placeholders —
