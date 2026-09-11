@@ -23,28 +23,13 @@ extra API calls beyond one WordPress post listing per article.
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass, field
 
 from app.integrations.wordpress import WordPressClient
+from app.services.text_similarity import bigrams, overlap_score
 
 _TOKEN_RE = re.compile(r"<li>\s*\[\[RELATED_ARTICLE(?::([^\]]*))?\]\]\s*</li>")
 _LEGACY_RE = re.compile(r"<li>\s*<!--.*?-->\s*</li>", re.S)
-_STRIP = re.compile(r"[|｜・:：,、。！？!?()（）\[\]【】\s\-—/]+")
-
-
-def _bigrams(text: str) -> set[str]:
-    t = unicodedata.normalize("NFKC", text or "")
-    t = _STRIP.sub("", t)
-    if len(t) < 2:
-        return {t} if t else set()
-    return {t[i : i + 2] for i in range(len(t) - 1)}
-
-
-def _score(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
 
 
 @dataclass
@@ -71,14 +56,14 @@ def fill_related_links(
     except Exception:
         posts = []
 
-    topic_bigrams = _bigrams(topic_text)
+    topic_bigrams = bigrams(topic_text)
     scored: list[tuple[float, str, str]] = []
     for p in posts:
         title = (p.get("title") or {}).get("rendered") or ""
         link = p.get("link")
         if not link or not title:
             continue
-        scored.append((_score(topic_bigrams, _bigrams(title)), title, link))
+        scored.append((overlap_score(topic_bigrams, bigrams(title)), title, link))
     scored.sort(key=lambda row: row[0], reverse=True)
     picks = [(title, link) for score, title, link in scored[:max_links] if score > 0]
 

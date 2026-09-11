@@ -146,7 +146,8 @@ function TopicsInner() {
           <SectionTitle>候補（{res.candidates.length}）</SectionTitle>
           <div className="mb-2 text-[12px] text-ink2">
             シード: {res.seeds_used.join(" / ") || "—"} ・ アイデア {res.ideas_returned} 件から、
-            既出 {res.covered_keywords} 語と閾値未満を除外
+            既出 {res.covered_keywords} 語・閾値未満・カニバリ疑い {res.cannibalization_excluded} 件
+            （WordPress既存記事 {res.wp_posts_checked} 件と照合）を除外
           </div>
           {res.candidates.length === 0 ? (
             <Empty>

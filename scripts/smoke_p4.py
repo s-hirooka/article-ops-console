@@ -159,6 +159,8 @@ def main() -> int:
         for u in c.get("/api/usage/api").json()
     ))
     check("  recommended present", ti.get("recommended") is not None, str(ti.get("recommended")))
+    check("  wp_posts_checked > 0 (WP_FAKE post list used)", ti.get("wp_posts_checked", 0) > 0, str(ti))
+    check("  cannibalization_excluded is int", isinstance(ti.get("cannibalization_excluded"), int), str(ti))
 
     # --- topic_auto_generate (キーワード自動探索→記事作成を一括) --------
     r = c.post("/api/jobs", headers=H, json={

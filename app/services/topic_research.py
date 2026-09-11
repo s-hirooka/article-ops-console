@@ -19,6 +19,15 @@ from sqlalchemy.orm import Session
 
 from app.db import models as m
 from app.integrations.google_ads_keywords import generate_keyword_ideas
+from app.services.text_similarity import bigrams, overlap_score
+
+# Above this character-bigram overlap between a candidate keyword and an
+# existing WordPress post title, treat the topic as already covered. Chosen
+# from a real case: a genuinely duplicate pair ("賃貸の床の傷｜補修グッズで
+# 直せる？" vs the already-published "賃貸のフローリングの傷、自分で直して
+# いい？補修グッズ5選比較") scored 0.178, while clearly-adjacent-but-distinct
+# pairs on the same site scored 0.036-0.078 — 0.12 sits cleanly between them.
+_CANNIBALIZATION_THRESHOLD = 0.12
 
 
 _PARTICLES = {"の", "を", "に", "は", "が", "で", "と", "も", "や", "へ", "から", "まで"}
@@ -98,6 +107,23 @@ def _derive_seeds(session: Session, domain_id: int, domain_key: str) -> list[str
     return seeds or [domain_key.replace("-", " ")]
 
 
+def _wp_post_titles(domain: m.Domain) -> list[str]:
+    """The domain's published post titles, straight from WordPress — catches
+    topics already covered by posts that predate this console (so were never
+    written to `articles`) or haven't started ranking yet (so aren't in
+    `keyword_rank_history` either). First 100 published posts only; fine for
+    now, revisit if a domain's post count grows past that."""
+    try:
+        from app.integrations.wordpress import WordPressClient
+        from app.services.publish import wp_creds_for_domain
+
+        wp = WordPressClient(wp_creds_for_domain(domain))
+        posts = wp.list_posts(per_page=100)
+    except Exception:
+        return []
+    return [t for p in posts if (t := (p.get("title") or {}).get("rendered"))]
+
+
 def pick_best(candidates: list[dict]) -> dict | None:
     """A single recommended candidate — balances reach against difficulty
     rather than just taking the highest-volume idea (which is usually also
@@ -138,8 +164,12 @@ def discover(
     covered_keys = {_token_key(k) for k in covered_raw}
     threshold = domain.keyword_threshold
 
+    wp_titles = _wp_post_titles(domain)
+    wp_title_bigrams = [bigrams(t) for t in wp_titles]
+
     # keep the best (highest-volume) idea per order-independent token set
     best: dict[frozenset[str], dict] = {}
+    cannibalization_excluded = 0
     for idea in ideas:
         vol = idea.avg_monthly_searches or 0
         if vol < threshold:
@@ -149,6 +179,13 @@ def discover(
         # already ranking / already targeted: exact term, or the same set of
         # significant tokens (word-order / particle variants).
         if not nk or nk in covered or key in covered_keys:
+            continue
+        # already has dedicated WordPress coverage, even if GSC/articles
+        # don't know about it yet (imported content, not-yet-ranking posts)
+        idea_bigrams = bigrams(idea.keyword)
+        if any(overlap_score(idea_bigrams, tb) >= _CANNIBALIZATION_THRESHOLD
+               for tb in wp_title_bigrams):
+            cannibalization_excluded += 1
             continue
         cur = best.get(key)
         if cur is None or vol > (cur["avg_monthly_searches"] or 0):
@@ -175,6 +212,8 @@ def discover(
         "threshold": threshold,
         "ideas_returned": len(ideas),
         "covered_keywords": len(covered),
+        "wp_posts_checked": len(wp_titles),
+        "cannibalization_excluded": cannibalization_excluded,
         "candidates": candidates,
         "recommended": pick_best(candidates),
     }

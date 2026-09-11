@@ -158,6 +158,8 @@ export interface TopicIdeas {
   threshold: number;
   ideas_returned: number;
   covered_keywords: number;
+  wp_posts_checked: number;
+  cannibalization_excluded: number;
   candidates: TopicCandidate[];
   recommended: TopicCandidate | null;
 }
