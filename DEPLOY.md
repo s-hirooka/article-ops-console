@@ -220,8 +220,25 @@ WordPress のアプリケーションパスワードは: WP管理画面 → ユ�
 ## 手順 8（任意）— ランク同期の定期実行
 
 `.github/workflows/rank_sync.yml` が毎日 04:17 JST に
-`POST /internal/cron/rank-sync` を叩く設計です（エンドポイント自体は P5 で実装予定）。
-それまでは手動で:
+`POST /internal/cron/rank-sync` を叩きます（実装済み — アカウント配下の全ドメインで
+`rank_sync` → `analysis` を実行し、通常のジョブと同じく `/api/jobs` の履歴に残ります）。
+
+設定が必要なもの:
+
+1. Render の `article-ops-console`（バックエンド）環境変数に **`CRON_TOKEN`** を追加
+   （適当な長いランダム文字列。例: `openssl rand -hex 32`）。
+2. GitHub リポジトリの **Settings → Secrets and variables → Actions** に、同じ値で
+   `CRON_TOKEN` を、バックエンドURLで `APP_BASE_URL`（例:
+   `https://article-ops-console.onrender.com`）を登録。
+
+手動で今すぐ実行したい場合（Actions タブから "Run workflow"、または）:
+
+```bash
+curl -X POST https://<サービス名>.onrender.com/internal/cron/rank-sync \
+  -H "Authorization: Bearer <CRON_TOKEN>"
+```
+
+ドメインを指定して1件だけ手動実行したい場合はこれまで通り:
 
 ```bash
 curl -X POST https://<サービス名>.onrender.com/api/jobs \

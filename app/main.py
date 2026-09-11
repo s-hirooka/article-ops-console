@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.api.routes_cron import router as cron_router
 from app.api.routes_oauth import router as oauth_router
 from app.api.routes_read import router as read_router
 from app.api.routes_write import router as write_router
@@ -47,6 +48,7 @@ app.add_middleware(
 app.include_router(read_router)
 app.include_router(write_router)
 app.include_router(oauth_router)
+app.include_router(cron_router)
 app.include_router(web_router)
 
 

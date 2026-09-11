@@ -42,6 +42,8 @@ services:
         sync: false              # https://<service>.onrender.com/oauth/google/callback
       - key: DEV_ACCOUNT_ID
         value: "1"
+      - key: CRON_TOKEN
+        sync: false              # GitHub Actions (.github/workflows/rank_sync.yml) の共有シークレット
       # --- Amazon Creators API（旧PA-API後継）— 記事内の商品トークンを実在商品に自動置換 ---
       - key: AMAZON_CREDENTIAL_ID
         sync: false              # Associates Central → Creators API（amzn1.application-oa2-client.…）

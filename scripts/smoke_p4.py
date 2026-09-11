@@ -28,6 +28,7 @@ os.environ.update(
     GADS_FAKE="1",
     AMAZON_FAKE="1",
     AMAZON_PARTNER_TAG="swork_seo-22",
+    CRON_TOKEN="smoke-test-token",
 )
 
 _fail = 0
@@ -126,8 +127,23 @@ def main() -> int:
     check("rank_sync succeeded", j["status"] == "succeeded", str(j))
     check("  rows written > 0", (j["result"] or {}).get("rows_written", 0) > 0, str(j))
 
-    rh = c.get("/api/domains/1/rank-history?days=3650").json()
+    rh = c.get("/api/domains/1/rank-history?days=365").json()
     check("rank-history endpoint shows rows", len(rh) > 0)
+
+    # --- scheduled cron trigger (.github/workflows/rank_sync.yml) --------
+    r = c.post("/internal/cron/rank-sync")
+    check("cron rank-sync without token -> 401", r.status_code == 401, r.text)
+    r = c.post("/internal/cron/rank-sync", headers={"Authorization": "Bearer wrong"})
+    check("cron rank-sync wrong token -> 401", r.status_code == 401, r.text)
+    r = c.post("/internal/cron/rank-sync",
+                headers={"Authorization": f"Bearer {os.environ['CRON_TOKEN']}"})
+    check("cron rank-sync -> 200", r.status_code == 200, r.text)
+    cj = r.json()
+    check("  covers the seeded domain", len(cj.get("domains", [])) == 1, str(cj))
+    check("  each domain's rank_sync+analysis succeeded", all(
+        dm["rank_sync"]["status"] == "succeeded" and dm["analysis"]["status"] == "succeeded"
+        for dm in cj.get("domains", [])
+    ), str(cj))
 
     # --- analysis -----------------------------------------------------
     r = c.post("/api/jobs", headers=H, json={"kind": "analysis", "domain_id": 1})
