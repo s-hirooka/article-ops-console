@@ -163,9 +163,9 @@ def main() -> int:
           0 < len(ti.get("recommended_top") or []) <= 10, str(ti.get("recommended_top")))
     check("  recommended_top[0] == recommended",
           (ti.get("recommended_top") or [{}])[0] == ti.get("recommended"))
-    check("  single_word_excluded is int", isinstance(ti.get("single_word_excluded"), int), str(ti))
-    check("  no single-word candidates leaked through",
-          all(len(k.replace("の", " ").split()) >= 2 for k in kws), str(kws))
+    check("  broad_keyword_excluded is int", isinstance(ti.get("broad_keyword_excluded"), int), str(ti))
+    check("  no candidates under 3 significant words leaked through",
+          all(len([t for t in k.replace("の", " ").split() if t]) >= 3 for k in kws), str(kws))
     check("  wp_posts_checked > 0 (WP_FAKE post list used)", ti.get("wp_posts_checked", 0) > 0, str(ti))
     check("  cannibalization_excluded is int", isinstance(ti.get("cannibalization_excluded"), int), str(ti))
 

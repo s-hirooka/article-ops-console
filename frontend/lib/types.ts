@@ -161,7 +161,7 @@ export interface TopicIdeas {
   wp_posts_checked: number;
   own_drafts_checked: number;
   cannibalization_excluded: number;
-  single_word_excluded: number;
+  broad_keyword_excluded: number;
   candidates: TopicCandidate[];
   recommended: TopicCandidate | null;
   recommended_top: TopicCandidate[];
