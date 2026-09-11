@@ -107,7 +107,8 @@ def main() -> int:
     check("article now 'published'", a["status"] == "published", str(a))
 
     r = c.post(f"/api/articles/{art_id}/publish", headers=H, json={"status": "publish"})
-    check("re-publish rejected -> 422", r.status_code == 422)
+    check("re-publish (content update) -> 200", r.status_code == 200, r.text)
+    check("  same wp_post_id reused", r.json().get("wp_post_id") == pub.get("wp_post_id"))
 
     # --- rank_sync -------------------------------------------------------
     r = c.post("/api/jobs", headers=H, json={"kind": "rank_sync", "domain_id": 1})

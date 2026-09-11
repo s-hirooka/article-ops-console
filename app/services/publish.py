@@ -49,8 +49,10 @@ def publish_article(
     art = session.get(m.Article, article_id)
     if art is None or art.account_id != account_id:
         raise PublishError("article が見つかりません。")
-    if art.status == "published" and art.wp_post_id:
-        raise PublishError(f"既に公開済みです（wp_post_id={art.wp_post_id}）。")
+    # No "already published" guard: wp_post_id existing means this always takes
+    # the update_post path below, so re-running is exactly how you push an
+    # edited body_html (e.g. corrected links) to the live post, or move a
+    # published post back to draft.
 
     domain = session.get(m.Domain, art.domain_id)
     if domain is None:
