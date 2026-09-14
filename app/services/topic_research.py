@@ -34,7 +34,7 @@ from app.services.text_similarity import bigrams, overlap_score
 # each is a real API call (~1s), and only the top of the ranking is ever
 # shown, so there's no point checking deep into a long tail that will never
 # be recommended anyway.
-_MAX_PRODUCT_CHECKS = 25
+_MAX_PRODUCT_CHECKS = 15
 
 # Above this character-bigram overlap between a candidate keyword and an
 # existing WordPress post title, treat the topic as already covered. Chosen
