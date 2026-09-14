@@ -1,14 +1,36 @@
 """Discover genuinely new article topics for a domain.
 
-GSC only surfaces queries a page already ranks for. To find *uncovered* topics
-we expand seed terms via Google Ads' GenerateKeywordIdeas, then subtract:
+Two ways to get candidates, depending on whether the caller supplies seeds:
+
+  * No seeds (the dashboard's default "おすすめキーワードを見る" flow):
+    generate_seed_keywords() has an LLM brainstorm keyword phrases directly,
+    grounded in the site's own system prompt and already-covered keywords,
+    then fetch_historical_metrics() volume-checks just those. This is the
+    method the project's earlier terminal-based workflow actually used (an
+    editor/LLM choosing topics from real knowledge of the niche, each then
+    checked with what's now fetch_historical_metrics — the Python port of
+    the old KeywordQueryRunner.exe tool, which only ever checked volume for
+    keywords already chosen; it never generated them).
+
+  * Explicit seeds (or a page_url): generate_keyword_ideas() expands them
+    through Google Ads' algorithmic keyword-idea service, 400 candidates at
+    a time, then filter_relevant_keywords() (an LLM call) cleans up the
+    noise that expansion tends to surface — homonym/brand-collision matches
+    Google Ads happily returns for a shared token ("オフィス 365" for a
+    storage site's "オフィス" seed), and real-estate-company/brand-name
+    keywords that are topically adjacent but not this site's article type.
+    Kept for the "explore around this specific term" use case; the no-seed
+    path above generates on-topic from the start rather than needing this
+    correction, and doesn't share its noise problem.
+
+Either way, candidates get the same coverage/competitiveness checks:
   * keywords the domain already ranks for (keyword_rank_history)
   * keywords an existing/queued article already targets (articles.target_keyword)
   * broad/big keywords (ビッグキーワード) — too competitive for a small site,
     kept to 3+ significant words (2-word compound product names like
     "ハンガー ラック" are just as big as a one-word term)
-  * off-topic homonym/brand matches Google Ads' expansion conflates with an
-    on-topic seed (filter_relevant_keywords — an LLM call, not a heuristic)
+  * cannibalizing an existing WordPress post or console draft (bigram title
+    overlap — see _wp_post_titles / _own_article_titles)
 and keep those clearing the domain's monthly-search threshold.
 
 (A live per-candidate Amazon product-availability check used to run here too
@@ -24,11 +46,11 @@ import re
 import unicodedata
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import models as m
-from app.integrations.google_ads_keywords import generate_keyword_ideas
+from app.integrations.google_ads_keywords import fetch_historical_metrics, generate_keyword_ideas
 from app.services.text_similarity import bigrams, overlap_score
 
 # Above this character-bigram overlap between a candidate keyword and an
@@ -80,41 +102,6 @@ def _covered_raw(session: Session, account_id: int, domain_id: int) -> list[str]
     return out
 
 
-
-
-def _derive_seeds(session: Session, domain_id: int, domain_key: str) -> list[str]:
-    """Seeds for Google Ads' idea service when the caller doesn't supply any.
-
-    Deliberately NOT the top GSC queries themselves: asking for "ideas like
-    <a long-tail query we already rank for>" mostly returns near-duplicates
-    of that same query, which then all get filtered out as already-covered —
-    the auto-discovery flow would return zero candidates almost every time.
-    Instead, seed with the significant *tokens* behind those queries (impression-
-    weighted), which are broad enough to surface genuinely different themes;
-    token-key coverage-matching only excludes an idea that shares the *entire*
-    token set with something covered, so a single shared token is harmless.
-    """
-    rows = session.execute(
-        select(
-            m.KeywordRankHistory.keyword,
-            func.sum(m.KeywordRankHistory.impressions).label("imp"),
-        )
-        .where(m.KeywordRankHistory.domain_id == domain_id)
-        .group_by(m.KeywordRankHistory.keyword)
-        .order_by(func.sum(m.KeywordRankHistory.impressions).desc())
-        .limit(20)
-    ).all()
-    if not rows:
-        return [domain_key.replace("-", " ")]
-
-    weight: dict[str, int] = {}
-    for kw, imp in rows:
-        for tok in re.split(r"\s+", unicodedata.normalize("NFKC", kw or "")):
-            if len(tok) < 2 or tok in _PARTICLES:
-                continue
-            weight[tok] = weight.get(tok, 0) + int(imp or 0)
-    seeds = [t for t, _ in sorted(weight.items(), key=lambda kv: -kv[1])[:8]]
-    return seeds or [domain_key.replace("-", " ")]
 
 
 def _own_article_titles(session: Session, domain_id: int) -> list[str]:
@@ -179,40 +166,28 @@ def pick_best(candidates: list[dict]) -> dict | None:
     return top[0] if top else None
 
 
-def discover(
-    session: Session,
+def _classify_candidates(
+    rows_or_ideas,
     *,
-    account_id: int,
-    domain_id: int,
-    seeds: list[str] | None = None,
-    page_url: str | None = None,
-    limit: int = 25,
-) -> dict:
-    domain = session.get(m.Domain, domain_id)
-    if domain is None or domain.account_id != account_id:
-        raise ValueError("domain が見つかりません。")
+    threshold: int,
+    covered: set[str],
+    covered_keys: set[frozenset[str]],
+    wp_title_bigrams: list[set[str]],
+    limit: int,
+) -> tuple[list[dict], int, int, int]:
+    """Shared filter core for both discovery modes: threshold, broad-keyword
+    (3+ words), covered, cannibalization. Takes anything with .keyword /
+    .avg_monthly_searches / .competition_level / .competition_index
+    (KeywordIdea and KeywordMetricRow both already have this shape).
 
-    seeds = [s.strip() for s in (seeds or []) if s.strip()]
-    if not seeds and not page_url:
-        seeds = _derive_seeds(session, domain_id, domain.domain_key)
-
-    ideas = generate_keyword_ideas(seeds, page_url=page_url, limit=400)
-
-    covered_raw = _covered_raw(session, account_id, domain_id)
-    covered = {_norm(k) for k in covered_raw}
-    covered_keys = {_token_key(k) for k in covered_raw}
-    threshold = domain.keyword_threshold
-
-    wp_titles = _wp_post_titles(domain)
-    own_titles = _own_article_titles(session, domain_id)
-    wp_title_bigrams = [bigrams(t) for t in wp_titles + own_titles]
-
-    # keep the best (highest-volume) idea per order-independent token set
+    Returns (candidates, below_threshold_excluded, broad_keyword_excluded,
+    cannibalization_excluded).
+    """
     best: dict[frozenset[str], dict] = {}
     cannibalization_excluded = 0
     broad_keyword_excluded = 0
     below_threshold_excluded = 0
-    for idea in ideas:
+    for idea in rows_or_ideas:
         vol = idea.avg_monthly_searches or 0
         if vol < threshold:
             below_threshold_excluded += 1
@@ -222,7 +197,7 @@ def discover(
         # Broad, established product-category terms draw the biggest,
         # best-funded competitors — a small site doesn't win those. This
         # isn't just literally single-word ideas ("本棚", "ラック", "オフィス"):
-        # Google Ads also splits plenty of single-concept compound product
+        # keyword tools also split plenty of single-concept compound product
         # names into two space-separated tokens ("ハンガー ラック",
         # "カラー ボックス", "スチール ラック", "キッチン カウンター") that are
         # just as competitive as a one-word term — confirmed by a user who
@@ -259,6 +234,48 @@ def discover(
             c["competition_index"] if c["competition_index"] is not None else 50,
         ),
     )[:limit]
+    return candidates, below_threshold_excluded, broad_keyword_excluded, cannibalization_excluded
+
+
+def discover(
+    session: Session,
+    *,
+    account_id: int,
+    domain_id: int,
+    seeds: list[str] | None = None,
+    page_url: str | None = None,
+    limit: int = 25,
+) -> dict:
+    domain = session.get(m.Domain, domain_id)
+    if domain is None or domain.account_id != account_id:
+        raise ValueError("domain が見つかりません。")
+
+    seeds = [s.strip() for s in (seeds or []) if s.strip()]
+
+    covered_raw = _covered_raw(session, account_id, domain_id)
+    covered = {_norm(k) for k in covered_raw}
+    covered_keys = {_token_key(k) for k in covered_raw}
+    threshold = domain.keyword_threshold
+
+    wp_titles = _wp_post_titles(domain)
+    own_titles = _own_article_titles(session, domain_id)
+    wp_title_bigrams = [bigrams(t) for t in wp_titles + own_titles]
+
+    if not seeds and not page_url:
+        return _discover_llm_first(
+            session, account_id=account_id, domain_id=domain_id, domain=domain,
+            covered_raw=covered_raw, covered=covered, covered_keys=covered_keys,
+            threshold=threshold, wp_titles=wp_titles, own_titles=own_titles,
+            wp_title_bigrams=wp_title_bigrams, limit=limit,
+        )
+
+    ideas = generate_keyword_ideas(seeds, page_url=page_url, limit=400)
+    candidates, below_threshold_excluded, broad_keyword_excluded, cannibalization_excluded = (
+        _classify_candidates(
+            ideas, threshold=threshold, covered=covered, covered_keys=covered_keys,
+            wp_title_bigrams=wp_title_bigrams, limit=limit,
+        )
+    )
 
     _record_api_usage(session, account_id, len(ideas))
 
@@ -311,6 +328,7 @@ def discover(
 
     return {
         "domain_id": domain_id,
+        "mode": "keyword_expansion",
         "seeds_used": seeds,
         "threshold": threshold,
         "ideas_returned": len(ideas),
@@ -321,6 +339,87 @@ def discover(
         "below_threshold_excluded": below_threshold_excluded,
         "broad_keyword_excluded": broad_keyword_excluded,
         "relevance_excluded": relevance_excluded,
+        "candidates": candidates,
+        "recommended": pick_best(candidates),
+        "recommended_top": recommended_top,
+    }
+
+
+def _discover_llm_first(
+    session: Session,
+    *,
+    account_id: int,
+    domain_id: int,
+    domain: m.Domain,
+    covered_raw: list[str],
+    covered: set[str],
+    covered_keys: set[frozenset[str]],
+    threshold: int,
+    wp_titles: list[str],
+    own_titles: list[str],
+    wp_title_bigrams: list[set[str]],
+    limit: int,
+) -> dict:
+    """No seeds given: have an LLM brainstorm candidates directly (grounded
+    in the site's own system prompt + what it already covers) instead of
+    expanding a derived seed through Google Ads' algorithmic idea service.
+    See generate_seed_keywords() and the module docstring for why."""
+    from app.services import budget, prompt_assembly
+    from app.services.article_pipeline import resolve_byok_key
+    from app.services.llm import generate_seed_keywords
+
+    assembled = prompt_assembly.assemble(session, domain_id)
+    acct = session.get(m.Account, account_id)
+    model = (acct.draft_model if acct else None) or "claude-sonnet-5"
+    byok = resolve_byok_key(domain)
+
+    idea_result = generate_seed_keywords(
+        system=assembled.system, covered=covered_raw, count=20,
+        model=model, api_key=byok,
+    )
+    if not idea_result.faked:
+        budget.record_usage(
+            session, account_id=account_id, domain_id=domain_id, job_id=None,
+            model=idea_result.model, input_tokens=idea_result.input_tokens,
+            output_tokens=idea_result.output_tokens,
+            cache_read_tokens=idea_result.cache_read_tokens,
+            cache_write_tokens=idea_result.cache_write_tokens,
+            cost_usd=idea_result.cost_usd,
+        )
+
+    keywords = idea_result.keywords
+    metrics_rows: list = []
+    if keywords:
+        try:
+            metrics_rows = fetch_historical_metrics(keywords)
+        except Exception:
+            metrics_rows = []
+
+    _record_api_usage(session, account_id, len(keywords))
+
+    candidates, below_threshold_excluded, broad_keyword_excluded, cannibalization_excluded = (
+        _classify_candidates(
+            metrics_rows, threshold=threshold, covered=covered, covered_keys=covered_keys,
+            wp_title_bigrams=wp_title_bigrams, limit=limit,
+        )
+    )
+
+    recommended_top = rank_top(candidates, limit=10)
+
+    return {
+        "domain_id": domain_id,
+        "mode": "llm_first",
+        "seeds_used": [],
+        "llm_keywords_generated": len(keywords),
+        "threshold": threshold,
+        "ideas_returned": len(metrics_rows),
+        "covered_keywords": len(covered),
+        "wp_posts_checked": len(wp_titles),
+        "own_drafts_checked": len(own_titles),
+        "cannibalization_excluded": cannibalization_excluded,
+        "below_threshold_excluded": below_threshold_excluded,
+        "broad_keyword_excluded": broad_keyword_excluded,
+        "relevance_excluded": 0,
         "candidates": candidates,
         "recommended": pick_best(candidates),
         "recommended_top": recommended_top,

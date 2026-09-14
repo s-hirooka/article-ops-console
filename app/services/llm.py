@@ -370,6 +370,118 @@ def filter_relevant_keywords(
     return KeywordFilterResult(kept, model, in_tok, out_tok, cr, cw, cost)
 
 
+_SUBMIT_KEYWORD_IDEAS_TOOL = {
+    "name": "submit_keyword_ideas",
+    "description": "このサイトで新しく記事化する価値がある検索キーワード候補を提出する。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "3語以上の具体的な検索キーワード候補",
+            },
+        },
+        "required": ["keywords"],
+    },
+}
+
+
+@dataclass(frozen=True)
+class KeywordIdeasResult:
+    keywords: list[str]
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    cost_usd: float
+    faked: bool = False
+
+
+def generate_seed_keywords(
+    *,
+    system: str,
+    covered: list[str],
+    count: int = 20,
+    model: str = "claude-sonnet-5",
+    api_key: str | None = None,
+    max_tokens: int = 4000,
+) -> KeywordIdeasResult:
+    """Brainstorm new, on-topic keyword candidates directly — this is the
+    method the project's earlier terminal-based workflow actually used
+    (an editor/LLM choosing topics from real knowledge of the site's niche
+    and existing coverage, each then volume-checked with what's now
+    fetch_historical_metrics — the Python port of the old KeywordQueryRunner
+    .exe tool, which only ever checked volume for keywords already chosen;
+    it never generated them). Compare with this app's other path,
+    generate_keyword_ideas() + filter_relevant_keywords(): expanding a seed
+    through Google Ads' algorithmic keyword-idea service first and filtering
+    the noise out afterward — in production that surfaced a lot of
+    off-topic/homonym/brand-name candidates needing heavy filtering to clean
+    up. Generating on-topic from the start avoids the problem instead of
+    correcting it downstream."""
+    if _use_fake(api_key):
+        return KeywordIdeasResult(
+            [f"テスト キーワード 案{i}" for i in range(count)],
+            model, 0, 0, 0, 0, 0.0, faked=True,
+        )
+
+    import anthropic  # lazy: keep import cost off the fake path
+
+    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+    covered_list = "\n".join(f"- {k}" for k in covered) or "（なし）"
+    message = (
+        f"このサイトで新しく記事化する価値がある検索キーワードを{count}個、"
+        "提案してください。次の条件をすべて満たすこと:\n\n"
+        "- 3語以上の具体的なロングテールキーワード（1〜2語の一般的な語は"
+        "競合が強すぎて小規模サイトでは上位化できないので避ける）\n"
+        "- このサイトの実際の記事タイプ（読者が自分で対応・解決するための"
+        "実用ガイド）として書ける検索語であること\n"
+        "- 企業名・ブランド名・サービス名そのものを含む語は避ける"
+        "（会社比較や物件・商品探しはこのサイトの記事タイプではない）\n"
+        "- 下記の「既にカバー済みのキーワード」と同じテーマ・意図の語は避ける\n\n"
+        f"--- 既にカバー済みのキーワード ---\n{covered_list}\n\n"
+        "考えたら submit_keyword_ideas を呼び出してください。"
+    )
+    kwargs: dict = dict(
+        model=model,
+        max_tokens=max_tokens,
+        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": message}],
+        tools=[_SUBMIT_KEYWORD_IDEAS_TOOL],
+        tool_choice={"type": "auto"},
+    )
+    try:
+        with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
+            msg = stream.get_final_message()
+    except TypeError:
+        with client.messages.stream(**kwargs) as stream:
+            msg = stream.get_final_message()
+
+    u = msg.usage
+    in_tok = int(getattr(u, "input_tokens", 0) or 0)
+    out_tok = int(getattr(u, "output_tokens", 0) or 0)
+    cr = int(getattr(u, "cache_read_input_tokens", 0) or 0)
+    cw = int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+    cost = cost_usd(model, in_tok, out_tok, cr, cw)
+
+    tool_use = next(
+        (b for b in msg.content if getattr(b, "type", None) == "tool_use"
+         and getattr(b, "name", None) == "submit_keyword_ideas"),
+        None,
+    )
+    if tool_use is None:
+        return KeywordIdeasResult([], model, in_tok, out_tok, cr, cw, cost)
+
+    kw = tool_use.input.get("keywords")
+    if not isinstance(kw, list):
+        return KeywordIdeasResult([], model, in_tok, out_tok, cr, cw, cost)
+
+    keywords = [str(k).strip() for k in kw if str(k).strip()]
+    return KeywordIdeasResult(keywords, model, in_tok, out_tok, cr, cw, cost)
+
+
 def _use_fake(api_key: str | None) -> bool:
     if os.environ.get("LLM_FAKE") == "1":
         return True

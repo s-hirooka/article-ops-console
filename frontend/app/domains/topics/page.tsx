@@ -139,14 +139,15 @@ function TopicsInner() {
             value={seedText}
             onChange={(e) => setSeedText(e.target.value)}
             rows={3}
-            placeholder={"空欄なら既存の上位クエリから自動でシードします\n例: 一人暮らし 収納\n例: 賃貸 修繕"}
+            placeholder={"空欄ならAIがサイトのテーマに合うキーワードを直接考えます\n特定の語の周辺を広げて探したいときだけ入力してください\n例: 一人暮らし 収納\n例: 賃貸 修繕"}
             className="rounded-lg border border-border bg-surface px-3 py-2 text-[13px] outline-none focus:border-accent"
           />
         </label>
         <div className="text-[12px] text-ink2">
-          Google Ads のキーワードアイデアを取得し、既にランク済み・記事化済みの語、
-          月間検索数 {d?.keyword_threshold ?? 500} 未満、サイトのテーマと無関係な語を除外します
-          （Google Ads・AI あわせて10〜20秒ほどかかります）。
+          シード欄が空欄の場合、AIがサイトの実際のテーマから候補を直接考え、Google Adsで
+          検索数を確認します。シードを入力した場合は、その語をGoogle Adsで広げてから、
+          既にランク済み・記事化済みの語、月間検索数 {d?.keyword_threshold ?? 500} 未満、
+          サイトのテーマと無関係な語を除外します（いずれも10〜30秒ほどかかります）。
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={search} disabled={running || topRunning}>
@@ -178,11 +179,23 @@ function TopicsInner() {
         <>
           <SectionTitle>おすすめキーワード（上位{topRes.recommended_top.length}件）</SectionTitle>
           <div className="mb-2 text-[12px] text-ink2">
-            シード: {topRes.seeds_used.join(" / ") || "—"} ・ アイデア {topRes.ideas_returned} 件から、
-            既出 {topRes.covered_keywords} 語・閾値未満 {topRes.below_threshold_excluded} 件・
-            ビッグキーワード {topRes.broad_keyword_excluded} 件・カニバリ疑い{" "}
-            {topRes.cannibalization_excluded} 件・サイトのテーマと無関係 {topRes.relevance_excluded} 件
-            （WordPress既存記事 {topRes.wp_posts_checked} 件・下書き {topRes.own_drafts_checked} 件と照合）を除外。
+            {topRes.mode === "llm_first" ? (
+              <>
+                AIが{topRes.llm_keywords_generated ?? "?"}件のキーワード案を考案し、Google Adsで
+                検索数を確認。既出 {topRes.covered_keywords} 語・閾値未満{" "}
+                {topRes.below_threshold_excluded} 件・ビッグキーワード {topRes.broad_keyword_excluded} 件・
+                カニバリ疑い {topRes.cannibalization_excluded} 件
+                （WordPress既存記事 {topRes.wp_posts_checked} 件・下書き {topRes.own_drafts_checked} 件と照合）を除外。
+              </>
+            ) : (
+              <>
+                シード: {topRes.seeds_used.join(" / ") || "—"} ・ アイデア {topRes.ideas_returned} 件から、
+                既出 {topRes.covered_keywords} 語・閾値未満 {topRes.below_threshold_excluded} 件・
+                ビッグキーワード {topRes.broad_keyword_excluded} 件・カニバリ疑い{" "}
+                {topRes.cannibalization_excluded} 件・サイトのテーマと無関係 {topRes.relevance_excluded} 件
+                （WordPress既存記事 {topRes.wp_posts_checked} 件・下書き {topRes.own_drafts_checked} 件と照合）を除外。
+              </>
+            )}
           </div>
           {topRes.recommended_top.length === 0 ? (
             <Empty>
@@ -227,11 +240,23 @@ function TopicsInner() {
         <>
           <SectionTitle>候補（{res.candidates.length}）</SectionTitle>
           <div className="mb-2 text-[12px] text-ink2">
-            シード: {res.seeds_used.join(" / ") || "—"} ・ アイデア {res.ideas_returned} 件から、
-            既出 {res.covered_keywords} 語・閾値未満 {res.below_threshold_excluded} 件・
-            ビッグキーワード {res.broad_keyword_excluded} 件・カニバリ疑い {res.cannibalization_excluded} 件・
-            サイトのテーマと無関係 {res.relevance_excluded} 件
-            （WordPress既存記事 {res.wp_posts_checked} 件・下書き {res.own_drafts_checked} 件と照合）を除外
+            {res.mode === "llm_first" ? (
+              <>
+                AIが{res.llm_keywords_generated ?? "?"}件のキーワード案を考案し、Google Adsで
+                検索数を確認。既出 {res.covered_keywords} 語・閾値未満 {res.below_threshold_excluded} 件・
+                ビッグキーワード {res.broad_keyword_excluded} 件・カニバリ疑い{" "}
+                {res.cannibalization_excluded} 件
+                （WordPress既存記事 {res.wp_posts_checked} 件・下書き {res.own_drafts_checked} 件と照合）を除外
+              </>
+            ) : (
+              <>
+                シード: {res.seeds_used.join(" / ") || "—"} ・ アイデア {res.ideas_returned} 件から、
+                既出 {res.covered_keywords} 語・閾値未満 {res.below_threshold_excluded} 件・
+                ビッグキーワード {res.broad_keyword_excluded} 件・カニバリ疑い {res.cannibalization_excluded} 件・
+                サイトのテーマと無関係 {res.relevance_excluded} 件
+                （WordPress既存記事 {res.wp_posts_checked} 件・下書き {res.own_drafts_checked} 件と照合）を除外
+              </>
+            )}
           </div>
           {res.candidates.length === 0 ? (
             <Empty>

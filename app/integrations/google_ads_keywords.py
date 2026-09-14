@@ -15,6 +15,7 @@ fetch, matched 1:1 against the C# tool for parity testing.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -85,10 +86,25 @@ def fetch_historical_metrics(
     Returns one row per keyword the API reports (order not guaranteed — key by
     ``keyword``). Counts as a single API call, exactly like one .exe invocation.
     """
-    s = settings or GoogleAdsSettings.from_env()
     keywords = [k for k in (kw.strip() for kw in keywords) if k]
     if not keywords:
         raise ValueError("キーワードが未指定です。")
+
+    if os.environ.get("GADS_FAKE") == "1":
+        return [
+            KeywordMetricRow(
+                keyword=kw,
+                avg_monthly_searches=1000 + i * 100,
+                competition_level="MEDIUM",
+                competition_index=40,
+                low_top_of_page_bid=None,
+                high_top_of_page_bid=None,
+                monthly_volumes=[],
+            )
+            for i, kw in enumerate(keywords)
+        ]
+
+    s = settings or GoogleAdsSettings.from_env()
     if len(keywords) > s.max_keywords_per_request:
         raise ValueError(
             f"キーワードは1回あたり最大 {s.max_keywords_per_request} 件です"

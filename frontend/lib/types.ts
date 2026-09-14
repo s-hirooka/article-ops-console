@@ -192,6 +192,8 @@ export interface TopicCandidate {
 
 export interface TopicIdeas {
   domain_id: number;
+  mode?: "llm_first" | "keyword_expansion";
+  llm_keywords_generated?: number;
   seeds_used: string[];
   threshold: number;
   ideas_returned: number;

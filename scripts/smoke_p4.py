@@ -255,6 +255,24 @@ def main() -> int:
     check("  wp_posts_checked > 0 (WP_FAKE post list used)", ti.get("wp_posts_checked", 0) > 0, str(ti))
     check("  cannibalization_excluded is int", isinstance(ti.get("cannibalization_excluded"), int), str(ti))
 
+    # --- topic ideas, no seeds (LLM-first brainstorm path) ---------------
+    # the dashboard's default "おすすめキーワードを見る" flow — an LLM
+    # proposes candidates directly instead of expanding a derived seed
+    # through Google Ads' idea service.
+    r = c.post("/api/domains/1/topic-ideas", headers=H, json={"limit": 10})
+    check("topic-ideas (no seeds) -> 200", r.status_code == 200, r.text)
+    ti2 = r.json()
+    check("  mode is llm_first", ti2.get("mode") == "llm_first", str(ti2))
+    check("  seeds_used empty", ti2.get("seeds_used") == [], str(ti2))
+    check("  llm_keywords_generated > 0", ti2.get("llm_keywords_generated", 0) > 0, str(ti2))
+    check("  candidates present", len(ti2.get("candidates") or []) > 0, str(ti2))
+    check("  recommended_top present and capped at 10",
+          0 < len(ti2.get("recommended_top") or []) <= 10, str(ti2.get("recommended_top")))
+    check("  api_usage recorded (2nd call today)", any(
+        u["provider"] == "google_ads" and u["operation"] == "keyword_ideas"
+        for u in c.get("/api/usage/api").json()
+    ))
+
     # --- topic_auto_generate (キーワード自動探索→記事作成を一括) --------
     r = c.post("/api/jobs", headers=H, json={
         "kind": "topic_auto_generate", "domain_id": 1,
