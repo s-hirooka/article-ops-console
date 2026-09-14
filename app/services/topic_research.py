@@ -184,40 +184,74 @@ def pick_best(candidates: list[dict]) -> dict | None:
     return top[0] if top else None
 
 
-def _has_amazon_products(keyword: str) -> bool:
+def _check_amazon_products(keyword: str) -> bool | None:
+    """True (found) / False (confirmed empty) / None (the search itself
+    failed — rate limit, credential issue, network blip). Distinguishing
+    the last case matters: silently treating "the API call errored" the
+    same as "Amazon has no products" is exactly what made a real rate-limit
+    problem look like every single candidate genuinely having no inventory
+    in production (24 checked, 24 rejected — the same 3 keywords worked
+    fine tested individually seconds apart)."""
     try:
         return bool(search_products(keyword, limit=1))
     except AmazonProductsError:
-        return False
+        return None
     except Exception:
-        return False
+        return None
+
+
+# Consecutive failed *API calls* (not "no products found" results) before
+# giving up on further checks — a burst of these means throttling or a
+# credentials problem, not that the whole rest of the ranked list happens
+# to have no inventory.
+_MAX_CONSECUTIVE_ERRORS = 3
 
 
 def rank_top_with_products(
     candidates: list[dict], *, limit: int = 10, max_checks: int = _MAX_PRODUCT_CHECKS
-) -> tuple[list[dict], int, int]:
+) -> tuple[list[dict], int, int, int]:
     """`rank_top`, but only keeping candidates a real Amazon search actually
     finds products for — recommending a keyword neither Amazon (product
     tokens) nor vc_auto_ads can fill is recommending a page with a gap in it
     by construction. Walks the ranking checking one candidate at a time
-    (real API calls, so bounded by max_checks) until `limit` verified
-    candidates are found or the ranking/check budget runs out.
+    (real API calls, so bounded by max_checks, and paced — see the sleep
+    below) until `limit` verified candidates are found or the ranking/check
+    budget runs out.
 
-    Returns (kept, checked_count, rejected_for_no_products_count).
+    Returns (kept, checked_count, rejected_for_no_products_count, errors_count).
     """
+    import os
+    import time
+
+    fake = os.environ.get("AMAZON_FAKE") == "1"
     ranked = sorted(candidates, key=_balance_score, reverse=True)
     kept: list[dict] = []
     checked = 0
     no_products = 0
+    errors = 0
+    consecutive_errors = 0
     for c in ranked:
         if len(kept) >= limit or checked >= max_checks:
             break
+        if checked > 0 and not fake:
+            # Amazon Creators API throttles per-second on lower sales tiers;
+            # a bare loop with no pacing is what triggered the bug above.
+            # Skipped in AMAZON_FAKE mode — nothing to pace against.
+            time.sleep(1.1)
         checked += 1
-        if _has_amazon_products(c["keyword"]):
+        found = _check_amazon_products(c["keyword"])
+        if found is True:
             kept.append({**c, "has_products": True})
-        else:
+            consecutive_errors = 0
+        elif found is False:
             no_products += 1
-    return kept, checked, no_products
+            consecutive_errors = 0
+        else:  # the search itself failed — don't blame "no products"
+            errors += 1
+            consecutive_errors += 1
+            if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                break  # likely throttled/credentials — stop burning through the rest
+    return kept, checked, no_products, errors
 
 
 def discover(
@@ -340,8 +374,8 @@ def discover(
     # a keyword it doesn't and the article goes live with an empty product
     # section either way. Only the shown top-10 gets this (real API calls);
     # the full `candidates` list stays as ranked/relevance-filtered above.
-    recommended_top, product_checked, no_product_excluded = rank_top_with_products(
-        candidates, limit=10
+    recommended_top, product_checked, no_product_excluded, product_check_errors = (
+        rank_top_with_products(candidates, limit=10)
     )
 
     return {
@@ -357,6 +391,7 @@ def discover(
         "relevance_excluded": relevance_excluded,
         "product_checked": product_checked,
         "no_product_excluded": no_product_excluded,
+        "product_check_errors": product_check_errors,
         "candidates": candidates,
         "recommended": recommended_top[0] if recommended_top else None,
         "recommended_top": recommended_top,

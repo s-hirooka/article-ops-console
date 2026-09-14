@@ -204,6 +204,7 @@ export interface TopicIdeas {
   relevance_excluded: number;
   product_checked: number;
   no_product_excluded: number;
+  product_check_errors: number;
   candidates: TopicCandidate[];
   recommended: TopicCandidate | null;
   recommended_top: TopicCandidate[];

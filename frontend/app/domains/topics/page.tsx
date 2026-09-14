@@ -186,6 +186,13 @@ function TopicsInner() {
             （WordPress既存記事 {topRes.wp_posts_checked} 件・下書き {topRes.own_drafts_checked} 件と照合）を除外。
             残った候補を{topRes.product_checked}件Amazonで検索し、商品が見つからなかった
             {topRes.no_product_excluded}件も除外。
+            {topRes.product_check_errors > 0 && (
+              <span className="text-warn">
+                {" "}
+                （うちAmazon検索自体が{topRes.product_check_errors}件失敗 — 一時的な制限の可能性。
+                時間をおいて再度お試しください）
+              </span>
+            )}
           </div>
           {topRes.recommended_top.length === 0 ? (
             <Empty>
