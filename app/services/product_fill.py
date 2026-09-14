@@ -87,6 +87,31 @@ def _render(kind: str, p: Product) -> str:
     return _block_html(p)  # BLOCK
 
 
+def _search_with_fallback(phrase: str, limit: int) -> list[Product]:
+    """Amazon search effectively ANDs every token together, so a phrase the
+    model over-specified (brand name + install type + niche function stacked
+    on top of the base category — "パナソニック対応 ドアホン交換用レンズ
+    曇り対策") often matches nothing even though a broader version of the same
+    idea is a real, findable product. Retry with the trailing (most specific)
+    token dropped, down to a 2-token floor, before giving up."""
+    try:
+        hits = search_products(phrase, limit=limit)
+    except AmazonProductsError:
+        hits = []
+    if hits:
+        return hits
+    tokens = phrase.split()
+    while len(tokens) > 2:
+        tokens = tokens[:-1]
+        try:
+            hits = search_products(" ".join(tokens), limit=limit)
+        except AmazonProductsError:
+            hits = []
+        if hits:
+            return hits
+    return []
+
+
 def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
     phrases = {m.group(2).strip() for m in _TOKEN_RE.finditer(html)}
     phrases |= {m.group(1).strip() for m in _LEGACY_RE.finditer(html)}
@@ -96,10 +121,7 @@ def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
     unresolved: list[str] = []
 
     for phrase in phrases:
-        try:
-            hits = search_products(phrase, limit=limit_per_lookup)
-        except AmazonProductsError:
-            hits = []
+        hits = _search_with_fallback(phrase, limit_per_lookup)
         if hits:
             cache[phrase] = hits[0]
             filled.append(phrase)
