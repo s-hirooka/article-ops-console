@@ -66,6 +66,18 @@ def _seed() -> None:
                        wp_base_url="https://lifehouse2026.com",
                        wp_username="editor", wp_app_password_enc=None,
                        keyword_threshold=500))
+        # A second, otherwise-untouched domain for tests that generate
+        # several articles in one run: LLM_FAKE's draft title always ends in
+        # the same fixed suffix ("...のおすすめと選び方【保存版】"), so once
+        # domain 1 has accumulated several fake articles from earlier test
+        # blocks, that shared suffix alone can push fresh candidates over the
+        # cannibalization bigram threshold regardless of keyword content.
+        s.add(m.Domain(id=2, account_id=1, domain_key="comfortablelivinglab",
+                       base_url="https://comfortablelivinglab.com",
+                       gsc_site_url="sc-domain:comfortablelivinglab.com",
+                       wp_base_url="https://comfortablelivinglab.com",
+                       wp_username="editor", wp_app_password_enc=None,
+                       keyword_threshold=500))
         s.commit()
 
 
@@ -139,7 +151,7 @@ def main() -> int:
                 headers={"Authorization": f"Bearer {os.environ['CRON_TOKEN']}"})
     check("cron rank-sync -> 200", r.status_code == 200, r.text)
     cj = r.json()
-    check("  covers the seeded domain", len(cj.get("domains", [])) == 1, str(cj))
+    check("  covers both seeded domains", len(cj.get("domains", [])) == 2, str(cj))
     check("  each domain's rank_sync+analysis succeeded", all(
         dm["rank_sync"]["status"] == "succeeded" and dm["analysis"]["status"] == "succeeded"
         for dm in cj.get("domains", [])
@@ -281,14 +293,31 @@ def main() -> int:
     tj = r.json()
     check("  succeeded", tj["status"] == "succeeded", str(tj))
     tres = tj.get("result") or {}
-    check("  selected_keyword present", bool((tres.get("selected_keyword") or {}).get("keyword")), str(tres))
-    check("  article_id present", isinstance(tres.get("article_id"), int), str(tres))
-    auto_art = c.get(f"/api/articles/{tres.get('article_id')}", headers=H)
-    check("  generated article fetchable", auto_art.status_code == 200)
+    check("  created_count 1", tres.get("created_count") == 1, str(tres))
+    tarts = tres.get("articles") or []
+    check("  selected_keyword present", bool((tarts[0].get("selected_keyword") or {}).get("keyword")) if tarts else False, str(tres))
+    check("  article_id present", isinstance(tarts[0].get("article_id"), int) if tarts else False, str(tres))
+    auto_art = c.get(f"/api/articles/{tarts[0].get('article_id')}", headers=H) if tarts else None
+    check("  generated article fetchable", auto_art is not None and auto_art.status_code == 200)
 
     # missing domain_id is rejected before dispatch
     r = c.post("/api/jobs", headers=H, json={"kind": "topic_auto_generate", "params": {}})
     check("topic_auto_generate without domain_id -> 422", r.status_code == 422, r.text)
+
+    # --- topic_auto_generate with count (batch generation) --------------
+    # domain_id=2: a fresh domain with no prior fake-generated articles (see
+    # _seed()'s comment on why domain 1 isn't safe for this by this point).
+    r = c.post("/api/jobs", headers=H, json={
+        "kind": "topic_auto_generate", "domain_id": 2,
+        "params": {"seeds": ["書類 収納"], "count": 2}})
+    check("topic_auto_generate count=2 -> 201", r.status_code == 201, r.text)
+    tj2 = r.json()
+    check("  succeeded", tj2["status"] == "succeeded", str(tj2))
+    tres2 = tj2.get("result") or {}
+    check("  requested_count 2", tres2.get("requested_count") == 2, str(tres2))
+    check("  created_count 2, no duplicate keywords", tres2.get("created_count") == 2 and len({
+        a["selected_keyword"]["keyword"] for a in (tres2.get("articles") or [])
+    }) == 2, str(tres2))
 
     # --- eyecatch job -----------------------------------------------
     r = c.post("/api/jobs", headers=H, json={

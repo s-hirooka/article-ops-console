@@ -141,39 +141,59 @@ def _dispatch(s: Session, job: m.Job) -> dict:
         from app.services import topic_research
 
         domain_id = job.domain_id or int(p["domain_id"])
-        discovery = topic_research.discover(
-            s,
-            account_id=job.account_id,
-            domain_id=domain_id,
-            seeds=p.get("seeds") or [],
-            page_url=p.get("page_url"),
-        )
-        best = discovery.get("recommended")
-        if best is None:
-            raise PipelineError(
-                "新規テーマの候補が見つかりませんでした（シード語を指定して"
-                "「新規テーマ探索」画面から再試行してください）。"
-            )
-        res = run_article_generate(
-            s,
-            account_id=job.account_id,
-            domain_id=domain_id,
-            target_keyword=best["keyword"],
-            created_by=job.created_by,
-            job_id=job.id,
-            search_volume=best.get("avg_monthly_searches"),
-        )
-        job.llm_cost_usd = res.cost_usd
+        count = max(1, min(int(p.get("count") or 1), 20))
+        articles: list[dict] = []
+        errors: list[str] = []
+        total_cost = 0.0
+        # Re-runs discover() fresh each iteration (rather than picking N
+        # candidates from one discover() call) so each pick sees the
+        # previous iteration's newly-created article as "already covered" —
+        # otherwise back-to-back generations for the same domain could pick
+        # the same keyword twice.
+        for i in range(count):
+            try:
+                discovery = topic_research.discover(
+                    s,
+                    account_id=job.account_id,
+                    domain_id=domain_id,
+                    seeds=p.get("seeds") or [],
+                    page_url=p.get("page_url"),
+                )
+                best = discovery.get("recommended")
+                if best is None:
+                    errors.append(f"{i + 1}件目: 新規テーマの候補が見つかりませんでした。")
+                    break
+                res = run_article_generate(
+                    s,
+                    account_id=job.account_id,
+                    domain_id=domain_id,
+                    target_keyword=best["keyword"],
+                    created_by=job.created_by,
+                    job_id=job.id,
+                    search_volume=best.get("avg_monthly_searches"),
+                )
+                total_cost += res.cost_usd
+                articles.append({
+                    "selected_keyword": best,
+                    "article_id": res.article_id,
+                    "title": res.title,
+                    "slug": res.slug,
+                    "cost_usd": res.cost_usd,
+                    "faked": res.faked,
+                    "warnings": res.warnings,
+                })
+            except (PipelineError, BudgetExceeded) as exc:
+                errors.append(f"{i + 1}件目: {exc}")
+                break
+        job.llm_cost_usd = total_cost
+        if not articles and errors:
+            raise PipelineError("; ".join(errors))
         return {
-            "selected_keyword": best,
-            "candidates_considered": len(discovery["candidates"]),
-            "seeds_used": discovery["seeds_used"],
-            "article_id": res.article_id,
-            "title": res.title,
-            "slug": res.slug,
-            "cost_usd": res.cost_usd,
-            "faked": res.faked,
-            "warnings": res.warnings,
+            "requested_count": count,
+            "created_count": len(articles),
+            "articles": articles,
+            "errors": errors,
+            "cost_usd": total_cost,
         }
 
     if job.kind == "improve_article":

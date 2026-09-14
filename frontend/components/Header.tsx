@@ -8,6 +8,7 @@ import type { Account } from "@/lib/types";
 
 const NAV = [
   { href: "/", label: "概要" },
+  { href: "/batch-generate", label: "一括記事生成" },
   { href: "/jobs", label: "ジョブ" },
 ];
 
