@@ -26,7 +26,9 @@ with a permanent placeholder.
 """
 from __future__ import annotations
 
+import os
 import re
+import time
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -87,6 +89,24 @@ def _render(kind: str, p: Product) -> str:
     return _block_html(p)  # BLOCK
 
 
+def _search_retrying(phrase: str, limit: int) -> list[Product]:
+    """A genuine "no such product" and a transient Amazon API fault (seen in
+    production as an intermittent InvalidPartnerTag-style error under rapid
+    sequential calls) both surface as AmazonProductsError to the caller —
+    but re-running the exact same phrase locally right after a production
+    miss has repeatedly found a real hit on the first try, pointing at
+    rate-limiting rather than an empty result. One retry after a short
+    backoff before giving up on this phrase."""
+    try:
+        return search_products(phrase, limit=limit)
+    except AmazonProductsError:
+        time.sleep(1.5)
+        try:
+            return search_products(phrase, limit=limit)
+        except AmazonProductsError:
+            return []
+
+
 def _search_with_fallback(phrase: str, limit: int) -> list[Product]:
     """Amazon search effectively ANDs every token together, so a phrase the
     model over-specified (brand name + install type + niche function stacked
@@ -94,19 +114,13 @@ def _search_with_fallback(phrase: str, limit: int) -> list[Product]:
     曇り対策") often matches nothing even though a broader version of the same
     idea is a real, findable product. Retry with the trailing (most specific)
     token dropped, down to a 2-token floor, before giving up."""
-    try:
-        hits = search_products(phrase, limit=limit)
-    except AmazonProductsError:
-        hits = []
+    hits = _search_retrying(phrase, limit)
     if hits:
         return hits
     tokens = phrase.split()
     while len(tokens) > 2:
         tokens = tokens[:-1]
-        try:
-            hits = search_products(" ".join(tokens), limit=limit)
-        except AmazonProductsError:
-            hits = []
+        hits = _search_retrying(" ".join(tokens), limit)
         if hits:
             return hits
     return []
@@ -120,7 +134,13 @@ def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
     filled: list[str] = []
     unresolved: list[str] = []
 
-    for phrase in phrases:
+    # Small pacing between distinct Amazon lookups — firing several searches
+    # back-to-back in one article's product fill is exactly the pattern that
+    # has triggered rate-limit-shaped errors from this API before.
+    pace = os.environ.get("AMAZON_FAKE") != "1"
+    for i, phrase in enumerate(phrases):
+        if i and pace:
+            time.sleep(1.1)
         hits = _search_with_fallback(phrase, limit_per_lookup)
         if hits:
             cache[phrase] = hits[0]
