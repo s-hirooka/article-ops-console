@@ -53,6 +53,7 @@ function DomainInner() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [improving, setImproving] = useState<string | null>(null);
   const [improveErr, setImproveErr] = useState<string | null>(null);
+  const [improvedKeywords, setImprovedKeywords] = useState<Set<string>>(new Set());
 
   function load() {
     if (!domainId) return;
@@ -71,6 +72,7 @@ function DomainInner() {
         setArticles(ar);
         setRec(rc);
         setImproveHist(ih);
+        setImprovedKeywords(new Set(ih.map((h) => h.keyword)));
       })
       .catch((e) => setErr(e.message));
   }
@@ -132,6 +134,7 @@ function DomainInner() {
         setImproveErr(job.error || "AIによる修正に失敗しました。");
         return;
       }
+      setImprovedKeywords((prev) => new Set(prev).add(o.keyword));
       const articleId = (job.result as { article_id?: number } | null)?.article_id;
       if (articleId) router.push(`/articles?id=${articleId}`);
     } catch (e) {
@@ -227,35 +230,42 @@ function DomainInner() {
               </tr>
             </thead>
             <tbody>
-              {rec.improvement_candidates.map((o, i) => (
-                <tr key={i}>
-                  <Td>{o.keyword}</Td>
-                  <Td num>{num(o.score)}</Td>
-                  <Td num>{num(o.position, 0)}</Td>
-                  <Td num>{o.impressions ?? "—"}</Td>
-                  <Td num>{o.clicks ?? "—"}</Td>
-                  <Td className="text-[12px]">{HINT_LABEL[o.action_hint]}</Td>
-                  <Td>
-                    <a
-                      href={o.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono text-[12px] text-accent hover:underline"
-                    >
-                      開く ↗
-                    </a>
-                  </Td>
-                  <Td>
-                    <button
-                      onClick={() => improveNow(o)}
-                      disabled={!!improving}
-                      className="text-[12px] text-accent hover:underline disabled:opacity-60"
-                    >
-                      {improving === o.url ? "AI修正中…（30〜90秒）" : "🤖 AIで実行"}
-                    </button>
-                  </Td>
-                </tr>
-              ))}
+              {rec.improvement_candidates.map((o, i) => {
+                const alreadyImproved = improvedKeywords.has(o.keyword);
+                return (
+                  <tr key={i}>
+                    <Td>{o.keyword}</Td>
+                    <Td num>{num(o.score)}</Td>
+                    <Td num>{num(o.position, 0)}</Td>
+                    <Td num>{o.impressions ?? "—"}</Td>
+                    <Td num>{o.clicks ?? "—"}</Td>
+                    <Td className="text-[12px]">{HINT_LABEL[o.action_hint]}</Td>
+                    <Td>
+                      <a
+                        href={o.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono text-[12px] text-accent hover:underline"
+                      >
+                        開く ↗
+                      </a>
+                    </Td>
+                    <Td>
+                      {alreadyImproved ? (
+                        <Pill tone="muted">改訂済み</Pill>
+                      ) : (
+                        <button
+                          onClick={() => improveNow(o)}
+                          disabled={!!improving}
+                          className="text-[12px] text-accent hover:underline disabled:opacity-60"
+                        >
+                          {improving === o.url ? "AI修正中…（30〜90秒）" : "🤖 AIで実行"}
+                        </button>
+                      )}
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </TableWrap>
         </>
