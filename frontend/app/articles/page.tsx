@@ -24,7 +24,11 @@ function ArticleInner() {
   const [a, setA] = useState<ArticleDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; at: string; ok: boolean } | null>(null);
+
+  function notify(text: string, ok: boolean) {
+    setNotice({ text, at: new Date().toISOString(), ok });
+  }
 
   function load() {
     api
@@ -39,17 +43,18 @@ function ArticleInner() {
 
   async function doPublish(status: "publish" | "draft") {
     setBusy(status);
-    setMsg(null);
+    setNotice(null);
     try {
       const r = await api.publish(articleId, status);
-      setMsg(
+      notify(
         status === "publish"
           ? `公開しました（wp_post_id ${r.wp_post_id}）` + (r.link ? ` — ${r.link}` : "")
           : `WordPress に下書き保存しました（wp_post_id ${r.wp_post_id}）`,
+        true,
       );
       load();
     } catch (e) {
-      setMsg(`失敗: ${(e as Error).message}`);
+      notify(`失敗: ${(e as Error).message}`, false);
     } finally {
       setBusy(null);
     }
@@ -57,7 +62,7 @@ function ArticleInner() {
 
   async function doFillProducts() {
     setBusy("fill");
-    setMsg(null);
+    setNotice(null);
     try {
       const r = await api.fillProducts(articleId);
       const parts: string[] = [];
@@ -65,10 +70,10 @@ function ArticleInner() {
       if (r.unresolved.length) parts.push(`商品が見つからず: ${r.unresolved.join("、")}`);
       if (r.related_linked.length) parts.push(`関連記事: ${r.related_linked.join("、")}`);
       if (r.related_slots_left_empty) parts.push(`関連記事が見つからない枠: ${r.related_slots_left_empty}件`);
-      setMsg(parts.length ? parts.join(" ／ ") : "差し替える箇所はありませんでした（変更なし）");
+      notify(parts.length ? parts.join(" ／ ") : "差し替える箇所はありませんでした（変更なし）", true);
       load();
     } catch (e) {
-      setMsg(`失敗: ${(e as Error).message}`);
+      notify(`失敗: ${(e as Error).message}`, false);
     } finally {
       setBusy(null);
     }
@@ -87,7 +92,7 @@ function ArticleInner() {
       const back = a?.domain_id ? `/domains?id=${a.domain_id}` : "/";
       router.push(back);
     } catch (e) {
-      setMsg(`削除失敗: ${(e as Error).message}`);
+      notify(`削除失敗: ${(e as Error).message}`, false);
       setBusy(null);
     }
   }
@@ -108,6 +113,18 @@ function ArticleInner() {
         </Link>{" "}
         / 記事
       </div>
+
+      {notice && (
+        <div
+          className={`mt-2 rounded-lg border px-3 py-2 text-[13px] font-medium ${
+            notice.ok ? "border-ok/40 bg-ok/10 text-ok" : "border-crit/40 bg-crit/10 text-crit"
+          }`}
+        >
+          {notice.ok ? "✅ " : "⚠️ "}
+          {notice.text}
+          <span className="ml-2 font-normal text-ink2">（{fmtDateTime(notice.at)}）</span>
+        </div>
+      )}
 
       <div className="mt-1 flex flex-wrap items-center gap-3">
         <h1 className="text-lg font-semibold">{a.title || "（無題）"}</h1>
@@ -144,7 +161,6 @@ function ArticleInner() {
         <Button variant="ghost" onClick={doDelete} disabled={!!busy}>
           {busy === "delete" ? "削除中…" : "削除"}
         </Button>
-        {msg && <span className="text-[12px] text-ink2">{msg}</span>}
       </div>
 
       {a.meta_description && (
