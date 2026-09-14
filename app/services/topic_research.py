@@ -184,20 +184,23 @@ def pick_best(candidates: list[dict]) -> dict | None:
     return top[0] if top else None
 
 
-def _check_amazon_products(keyword: str) -> bool | None:
-    """True (found) / False (confirmed empty) / None (the search itself
-    failed — rate limit, credential issue, network blip). Distinguishing
-    the last case matters: silently treating "the API call errored" the
-    same as "Amazon has no products" is exactly what made a real rate-limit
-    problem look like every single candidate genuinely having no inventory
-    in production (24 checked, 24 rejected — the same 3 keywords worked
-    fine tested individually seconds apart)."""
+def _check_amazon_products(keyword: str) -> tuple[bool | None, str | None]:
+    """(found, error_message). found: True / False (confirmed empty) / None
+    (the search itself failed — rate limit, credential issue, network
+    blip). Distinguishing the last case matters: silently treating "the API
+    call errored" the same as "Amazon has no products" is exactly what made
+    a real problem look like every candidate genuinely having no inventory
+    (24 checked, 24 rejected in one production run — the same 3 keywords
+    worked fine tested individually seconds later). The error message is
+    kept (not just swallowed) so a *second* occurrence is diagnosable
+    instead of another guessing round — this bug wasn't actually fixed by
+    the retry/pacing logic alone; it recurred with pacing in place too."""
     try:
-        return bool(search_products(keyword, limit=1))
-    except AmazonProductsError:
-        return None
-    except Exception:
-        return None
+        return bool(search_products(keyword, limit=1)), None
+    except AmazonProductsError as exc:
+        return None, str(exc)
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 # Consecutive failed *API calls* (not "no products found" results) before
@@ -209,7 +212,7 @@ _MAX_CONSECUTIVE_ERRORS = 3
 
 def rank_top_with_products(
     candidates: list[dict], *, limit: int = 10, max_checks: int = _MAX_PRODUCT_CHECKS
-) -> tuple[list[dict], int, int, int]:
+) -> tuple[list[dict], int, int, int, str | None]:
     """`rank_top`, but only keeping candidates a real Amazon search actually
     finds products for — recommending a keyword neither Amazon (product
     tokens) nor vc_auto_ads can fill is recommending a page with a gap in it
@@ -218,7 +221,8 @@ def rank_top_with_products(
     below) until `limit` verified candidates are found or the ranking/check
     budget runs out.
 
-    Returns (kept, checked_count, rejected_for_no_products_count, errors_count).
+    Returns (kept, checked_count, rejected_for_no_products_count,
+    errors_count, first_error_message).
     """
     import os
     import time
@@ -230,6 +234,7 @@ def rank_top_with_products(
     no_products = 0
     errors = 0
     consecutive_errors = 0
+    first_error: str | None = None
     for c in ranked:
         if len(kept) >= limit or checked >= max_checks:
             break
@@ -239,7 +244,7 @@ def rank_top_with_products(
             # Skipped in AMAZON_FAKE mode — nothing to pace against.
             time.sleep(1.1)
         checked += 1
-        found = _check_amazon_products(c["keyword"])
+        found, err = _check_amazon_products(c["keyword"])
         if found is True:
             kept.append({**c, "has_products": True})
             consecutive_errors = 0
@@ -249,9 +254,11 @@ def rank_top_with_products(
         else:  # the search itself failed — don't blame "no products"
             errors += 1
             consecutive_errors += 1
+            if first_error is None:
+                first_error = err
             if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
                 break  # likely throttled/credentials — stop burning through the rest
-    return kept, checked, no_products, errors
+    return kept, checked, no_products, errors, first_error
 
 
 def discover(
@@ -374,9 +381,8 @@ def discover(
     # a keyword it doesn't and the article goes live with an empty product
     # section either way. Only the shown top-10 gets this (real API calls);
     # the full `candidates` list stays as ranked/relevance-filtered above.
-    recommended_top, product_checked, no_product_excluded, product_check_errors = (
-        rank_top_with_products(candidates, limit=10)
-    )
+    recommended_top, product_checked, no_product_excluded, product_check_errors, \
+        product_check_error_sample = rank_top_with_products(candidates, limit=10)
 
     return {
         "domain_id": domain_id,
@@ -392,6 +398,7 @@ def discover(
         "product_checked": product_checked,
         "no_product_excluded": no_product_excluded,
         "product_check_errors": product_check_errors,
+        "product_check_error_sample": product_check_error_sample,
         "candidates": candidates,
         "recommended": recommended_top[0] if recommended_top else None,
         "recommended_top": recommended_top,
