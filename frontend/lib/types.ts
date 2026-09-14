@@ -200,6 +200,7 @@ export interface TopicIdeas {
   wp_posts_checked: number;
   own_drafts_checked: number;
   cannibalization_excluded: number;
+  below_threshold_excluded: number;
   broad_keyword_excluded: number;
   relevance_excluded: number;
   product_checked: number;

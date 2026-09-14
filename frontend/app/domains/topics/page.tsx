@@ -180,9 +180,9 @@ function TopicsInner() {
           <SectionTitle>おすすめキーワード（上位{topRes.recommended_top.length}件）</SectionTitle>
           <div className="mb-2 text-[12px] text-ink2">
             シード: {topRes.seeds_used.join(" / ") || "—"} ・ アイデア {topRes.ideas_returned} 件から、
-            既出 {topRes.covered_keywords} 語・閾値未満・ビッグキーワード {topRes.broad_keyword_excluded} 件・
-            カニバリ疑い {topRes.cannibalization_excluded} 件・サイトのテーマと無関係
-            {topRes.relevance_excluded} 件
+            既出 {topRes.covered_keywords} 語・閾値未満 {topRes.below_threshold_excluded} 件・
+            ビッグキーワード {topRes.broad_keyword_excluded} 件・カニバリ疑い{" "}
+            {topRes.cannibalization_excluded} 件・サイトのテーマと無関係 {topRes.relevance_excluded} 件
             （WordPress既存記事 {topRes.wp_posts_checked} 件・下書き {topRes.own_drafts_checked} 件と照合）を除外。
             残った候補を{topRes.product_checked}件Amazonで検索し、商品が見つからなかった
             {topRes.no_product_excluded}件も除外。
@@ -243,8 +243,9 @@ function TopicsInner() {
           <SectionTitle>候補（{res.candidates.length}）</SectionTitle>
           <div className="mb-2 text-[12px] text-ink2">
             シード: {res.seeds_used.join(" / ") || "—"} ・ アイデア {res.ideas_returned} 件から、
-            既出 {res.covered_keywords} 語・閾値未満・ビッグキーワード {res.broad_keyword_excluded} 件・
-            カニバリ疑い {res.cannibalization_excluded} 件
+            既出 {res.covered_keywords} 語・閾値未満 {res.below_threshold_excluded} 件・
+            ビッグキーワード {res.broad_keyword_excluded} 件・カニバリ疑い {res.cannibalization_excluded} 件・
+            サイトのテーマと無関係 {res.relevance_excluded} 件
             （WordPress既存記事 {res.wp_posts_checked} 件・下書き {res.own_drafts_checked} 件と照合）を除外
           </div>
           {res.candidates.length === 0 ? (

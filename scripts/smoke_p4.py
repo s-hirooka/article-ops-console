@@ -245,6 +245,8 @@ def main() -> int:
           0 < len(ti.get("recommended_top") or []) <= 10, str(ti.get("recommended_top")))
     check("  recommended_top[0] == recommended",
           (ti.get("recommended_top") or [{}])[0] == ti.get("recommended"))
+    check("  below_threshold_excluded is int",
+          isinstance(ti.get("below_threshold_excluded"), int), str(ti))
     check("  broad_keyword_excluded is int", isinstance(ti.get("broad_keyword_excluded"), int), str(ti))
     check("  relevance_excluded is int (LLM_FAKE passthrough, so 0)",
           ti.get("relevance_excluded") == 0, str(ti))

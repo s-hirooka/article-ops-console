@@ -293,9 +293,11 @@ def discover(
     best: dict[frozenset[str], dict] = {}
     cannibalization_excluded = 0
     broad_keyword_excluded = 0
+    below_threshold_excluded = 0
     for idea in ideas:
         vol = idea.avg_monthly_searches or 0
         if vol < threshold:
+            below_threshold_excluded += 1
             continue
         nk = _norm(idea.keyword)
         key = _token_key(idea.keyword)
@@ -369,9 +371,21 @@ def discover(
                     output_tokens=fr.output_tokens, cache_read_tokens=fr.cache_read_tokens,
                     cache_write_tokens=fr.cache_write_tokens, cost_usd=fr.cost_usd,
                 )
-            keep = set(fr.keywords)
-            relevance_excluded = len(candidates) - len(keep)
-            candidates = [c for c in candidates if c["keyword"] in keep]
+            # Normalized match, not exact string membership: the model is
+            # asked to echo candidates back verbatim ("元の表記のまま") but
+            # doesn't reliably preserve unnatural-looking internal spacing
+            # in Google Ads' pre-tokenized keywords ("メール アドレス 作成")
+            # — collapsing/adjusting it is a plausible "fix" for a model
+            # transcribing what reads as oddly-spaced text. Exact matching
+            # silently turned that into near-total exclusion in production
+            # (0 candidates survived, reported as only 30 "excluded" because
+            # the count itself was a set-size difference, not a real overlap
+            # count) — normalize both sides the same way the rest of this
+            # module already does before comparing.
+            keep_norm = {_norm(k) for k in fr.keywords}
+            kept = [c for c in candidates if _norm(c["keyword"]) in keep_norm]
+            relevance_excluded = len(candidates) - len(kept)
+            candidates = kept
         except Exception:
             pass
 
@@ -393,6 +407,7 @@ def discover(
         "wp_posts_checked": len(wp_titles),
         "own_drafts_checked": len(own_titles),
         "cannibalization_excluded": cannibalization_excluded,
+        "below_threshold_excluded": below_threshold_excluded,
         "broad_keyword_excluded": broad_keyword_excluded,
         "relevance_excluded": relevance_excluded,
         "product_checked": product_checked,
