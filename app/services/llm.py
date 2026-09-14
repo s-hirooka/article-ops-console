@@ -294,7 +294,15 @@ def filter_relevant_keywords(
     product, off-topic) in production — that share a literal token with an
     on-topic seed but aren't the same search intent at all. Token/bigram
     overlap can't tell those apart; a model reading the site's own system
-    prompt can."""
+    prompt can.
+
+    Also excludes a second, subtler case found in production: keywords that
+    ARE topically adjacent but name a real-estate company/property-brand/
+    listing-service ("積水ハウス 賃貸", "アットホーム 賃貸", "大和ハウス
+    賃貸") — genuinely about 賃貸, but a company-comparison or listing-site
+    search, not something lifehouse2026's actual article type (a reader
+    fixing a housing problem themselves) answers. First cut of this filter
+    only caught the homonym case and let these through."""
     if not candidates:
         return KeywordFilterResult([], model, 0, 0, 0, 0, 0.0, faked=True)
     if _use_fake(api_key):
@@ -306,11 +314,18 @@ def filter_relevant_keywords(
     listing = "\n".join(f"- {k}" for k in candidates)
     message = (
         "次のキーワード候補の中から、このサイトで実際に記事化する価値がある"
-        "（サイトの実際のテーマ・扱っている商品ジャンルに合っている）ものだけを"
-        "選んでください。ブランド名・ソフトウェア名など無関係な語や、たまたま"
-        "同じ単語を含むだけで意図がまったく違う語（例: 収納サイトに対する"
-        "「オフィス 365」＝Microsoft Officeソフトの検索）は除外してください。"
-        "判断に迷わない限り、基本的には多く残してください。\n\n"
+        "ものだけを選んでください。上記のサイト説明にある通りの記事タイプ"
+        "（読者が自分で対応・解決するための実用ガイド）として書けるかどうかで"
+        "判断してください。次の2種類は除外してください:\n\n"
+        "1. たまたま同じ単語を含むだけで検索意図がまったく違う語\n"
+        "   （例: 収納サイトに対する「オフィス 365」＝Microsoft Officeソフトの検索）\n"
+        "2. 話題としては近くても、このサイトの記事タイプ（実用ガイド）では"
+        "答えられない語 — 特に企業名・ブランド名・サービス名そのものを含む検索"
+        "（例: 賃貸系サイトに対する「積水ハウス 賃貸」「アットホーム 賃貸」"
+        "「大和ハウス 賃貸」のような、不動産会社・住宅メーカー・物件検索サイトの"
+        "名前が入った語。これらは会社比較・物件探しの検索であり、トラブル解決"
+        "ガイドの読者が検索する語ではない）\n\n"
+        "この2種類に当てはまらない限りは残してください。\n\n"
         f"{listing}\n\n"
         "選んだら submit_relevant_keywords を呼び出してください。"
     )
