@@ -92,7 +92,10 @@ def search_products(keywords: str, limit: int = 3) -> list[Product]:
             ],
         )
     except Exception as exc:  # library raises its own error types
-        raise AmazonProductsError(f"Amazon 商品検索に失敗しました: {exc}") from exc
+        raise AmazonProductsError(
+            f"Amazon 商品検索に失敗しました（credential_id末尾: ...{cfg['credential_id'][-8:]}"
+            f" / tag: {cfg['tag']}）: {exc}"
+        ) from exc
 
     out: list[Product] = []
     for item in result.items or []:
