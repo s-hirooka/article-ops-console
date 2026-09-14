@@ -7,6 +7,11 @@ we expand seed terms via Google Ads' GenerateKeywordIdeas, then subtract:
   * broad/big keywords (ビッグキーワード) — too competitive for a small site,
     kept to 3+ significant words (2-word compound product names like
     "ハンガー ラック" are just as big as a one-word term)
+  * off-topic homonym/brand matches Google Ads' expansion conflates with an
+    on-topic seed (filter_relevant_keywords — an LLM call, not a heuristic)
+  * keywords Amazon has no real products for (rank_top_with_products — a
+    live Creators API search per shown candidate), since both domains'
+    monetization ultimately needs a real product to fill the page
 and keep those clearing the domain's monthly-search threshold.
 
 One Google Ads API call per run; recorded in api_usage.
@@ -21,8 +26,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import models as m
+from app.integrations.amazon_products import AmazonProductsError, search_products
 from app.integrations.google_ads_keywords import generate_keyword_ideas
 from app.services.text_similarity import bigrams, overlap_score
+
+# Bound on how many candidates get an Amazon availability check per run —
+# each is a real API call (~1s), and only the top of the ranking is ever
+# shown, so there's no point checking deep into a long tail that will never
+# be recommended anyway.
+_MAX_PRODUCT_CHECKS = 25
 
 # Above this character-bigram overlap between a candidate keyword and an
 # existing WordPress post title, treat the topic as already covered. Chosen
@@ -172,6 +184,42 @@ def pick_best(candidates: list[dict]) -> dict | None:
     return top[0] if top else None
 
 
+def _has_amazon_products(keyword: str) -> bool:
+    try:
+        return bool(search_products(keyword, limit=1))
+    except AmazonProductsError:
+        return False
+    except Exception:
+        return False
+
+
+def rank_top_with_products(
+    candidates: list[dict], *, limit: int = 10, max_checks: int = _MAX_PRODUCT_CHECKS
+) -> tuple[list[dict], int, int]:
+    """`rank_top`, but only keeping candidates a real Amazon search actually
+    finds products for — recommending a keyword neither Amazon (product
+    tokens) nor vc_auto_ads can fill is recommending a page with a gap in it
+    by construction. Walks the ranking checking one candidate at a time
+    (real API calls, so bounded by max_checks) until `limit` verified
+    candidates are found or the ranking/check budget runs out.
+
+    Returns (kept, checked_count, rejected_for_no_products_count).
+    """
+    ranked = sorted(candidates, key=_balance_score, reverse=True)
+    kept: list[dict] = []
+    checked = 0
+    no_products = 0
+    for c in ranked:
+        if len(kept) >= limit or checked >= max_checks:
+            break
+        checked += 1
+        if _has_amazon_products(c["keyword"]):
+            kept.append({**c, "has_products": True})
+        else:
+            no_products += 1
+    return kept, checked, no_products
+
+
 def discover(
     session: Session,
     *,
@@ -253,6 +301,49 @@ def discover(
 
     _record_api_usage(session, account_id, len(ideas))
 
+    # Relevance filter: does this candidate actually fit the site's real
+    # editorial niche, not just share a token with something that does? See
+    # filter_relevant_keywords — token/bigram heuristics can't tell "オフィス
+    # 収納" (on-topic) from "オフィス 365" (Microsoft's product, off-topic
+    # despite sharing "オフィス"). Best-effort: never block discovery over it.
+    relevance_excluded = 0
+    if candidates:
+        try:
+            from app.services import budget, prompt_assembly
+            from app.services.article_pipeline import resolve_byok_key
+            from app.services.llm import filter_relevant_keywords
+
+            assembled = prompt_assembly.assemble(session, domain_id)
+            acct = session.get(m.Account, account_id)
+            model = (acct.draft_model if acct else None) or "claude-sonnet-5"
+            fr = filter_relevant_keywords(
+                [c["keyword"] for c in candidates],
+                system=assembled.system, model=model,
+                api_key=resolve_byok_key(domain),
+            )
+            if not fr.faked:
+                budget.record_usage(
+                    session, account_id=account_id, domain_id=domain_id, job_id=None,
+                    model=fr.model, input_tokens=fr.input_tokens,
+                    output_tokens=fr.output_tokens, cache_read_tokens=fr.cache_read_tokens,
+                    cache_write_tokens=fr.cache_write_tokens, cost_usd=fr.cost_usd,
+                )
+            keep = set(fr.keywords)
+            relevance_excluded = len(candidates) - len(keep)
+            candidates = [c for c in candidates if c["keyword"] in keep]
+        except Exception:
+            pass
+
+    # Product-availability gate: both domains' monetization (Amazon Creators
+    # API tokens on lifehouse2026, vc_auto_ads on comfortablelivinglab)
+    # ultimately needs Amazon to actually have matching products — recommend
+    # a keyword it doesn't and the article goes live with an empty product
+    # section either way. Only the shown top-10 gets this (real API calls);
+    # the full `candidates` list stays as ranked/relevance-filtered above.
+    recommended_top, product_checked, no_product_excluded = rank_top_with_products(
+        candidates, limit=10
+    )
+
     return {
         "domain_id": domain_id,
         "seeds_used": seeds,
@@ -263,9 +354,12 @@ def discover(
         "own_drafts_checked": len(own_titles),
         "cannibalization_excluded": cannibalization_excluded,
         "broad_keyword_excluded": broad_keyword_excluded,
+        "relevance_excluded": relevance_excluded,
+        "product_checked": product_checked,
+        "no_product_excluded": no_product_excluded,
         "candidates": candidates,
-        "recommended": pick_best(candidates),
-        "recommended_top": rank_top(candidates, limit=10),
+        "recommended": recommended_top[0] if recommended_top else None,
+        "recommended_top": recommended_top,
     }
 
 

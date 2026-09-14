@@ -144,20 +144,23 @@ function TopicsInner() {
           />
         </label>
         <div className="text-[12px] text-ink2">
-          Google Ads のキーワードアイデアを取得し、既にランク済み・記事化済みの語と
-          月間検索数 {d?.keyword_threshold ?? 500} 未満を除外します（API を1回消費）。
+          Google Ads のキーワードアイデアを取得し、既にランク済み・記事化済みの語、
+          月間検索数 {d?.keyword_threshold ?? 500} 未満、サイトのテーマと無関係な語、
+          Amazonに商品が見つからない語を除外します（Google Ads・AI・Amazon
+          あわせて30〜60秒ほどかかります）。
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={search} disabled={running || topRunning}>
-            {running ? "探索中…" : "テーマを探す（一覧）"}
+            {running ? "探索中…（30〜60秒）" : "テーマを探す（一覧）"}
           </Button>
           <Button variant="ghost" onClick={showRecommended} disabled={running || topRunning}>
-            {topRunning ? "探索中…" : "🔍 おすすめキーワードを見る（上位10件）"}
+            {topRunning ? "探索中…（30〜60秒）" : "🔍 おすすめキーワードを見る（上位10件）"}
           </Button>
         </div>
         <div className="text-[12px] text-ink2">
-          おすすめキーワードは検索数と競合のバランスが良い順に10件表示します。キーワードを
-          クリックするとその語で記事生成まで実行します（Anthropic API の実課金が発生します）。
+          おすすめキーワードは、サイトのテーマに合っていてAmazonに実在する商品がある語だけを、
+          検索数と競合のバランスが良い順に10件表示します。キーワードをクリックするとその語で
+          記事生成まで実行します（Anthropic API の実課金が発生します）。
         </div>
       </Card>
 
@@ -178,8 +181,11 @@ function TopicsInner() {
           <div className="mb-2 text-[12px] text-ink2">
             シード: {topRes.seeds_used.join(" / ") || "—"} ・ アイデア {topRes.ideas_returned} 件から、
             既出 {topRes.covered_keywords} 語・閾値未満・ビッグキーワード {topRes.broad_keyword_excluded} 件・
-            カニバリ疑い {topRes.cannibalization_excluded} 件
-            （WordPress既存記事 {topRes.wp_posts_checked} 件・下書き {topRes.own_drafts_checked} 件と照合）を除外
+            カニバリ疑い {topRes.cannibalization_excluded} 件・サイトのテーマと無関係
+            {topRes.relevance_excluded} 件
+            （WordPress既存記事 {topRes.wp_posts_checked} 件・下書き {topRes.own_drafts_checked} 件と照合）を除外。
+            残った候補を{topRes.product_checked}件Amazonで検索し、商品が見つからなかった
+            {topRes.no_product_excluded}件も除外。
           </div>
           {topRes.recommended_top.length === 0 ? (
             <Empty>
@@ -201,8 +207,13 @@ function TopicsInner() {
                       {c.competition_index != null ? ` (${c.competition_index})` : ""}
                     </span>
                   </div>
-                  <div className="text-[12px] text-ink2">
-                    月間検索数 {c.avg_monthly_searches?.toLocaleString() ?? "—"}
+                  <div className="flex items-center gap-2 text-[12px] text-ink2">
+                    <span>月間検索数 {c.avg_monthly_searches?.toLocaleString() ?? "—"}</span>
+                    {c.has_products && (
+                      <span className="rounded-full bg-ok/15 px-2 py-0.5 text-[11px] text-ok">
+                        Amazon商品あり
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 text-[12px] text-accent">
                     {genKeyword === c.keyword ? "作成中…（30〜90秒）" : "この語で記事を作成 →"}

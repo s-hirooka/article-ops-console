@@ -250,6 +250,111 @@ def generate_title_revision(
     )
 
 
+_FILTER_KEYWORDS_TOOL = {
+    "name": "submit_relevant_keywords",
+    "description": "候補キーワードの中から、このサイトで実際に記事化する価値があるものだけを選んで提出する。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "relevant": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "候補のうち、このサイトの実際のテーマに合う語（元の表記のまま）",
+            },
+        },
+        "required": ["relevant"],
+    },
+}
+
+
+@dataclass(frozen=True)
+class KeywordFilterResult:
+    keywords: list[str]
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    cost_usd: float
+    faked: bool = False
+
+
+def filter_relevant_keywords(
+    candidates: list[str],
+    *,
+    system: str,
+    model: str = "claude-sonnet-5",
+    api_key: str | None = None,
+    max_tokens: int = 4000,
+) -> KeywordFilterResult:
+    """Which of these keyword-idea candidates actually fit this site's real
+    editorial niche? Google Ads' keyword-idea expansion happily returns
+    homonym/brand-collision matches — e.g. seed "オフィス" (office storage,
+    on-topic for a 収納 site) turning up "オフィス 365" (Microsoft's
+    product, off-topic) in production — that share a literal token with an
+    on-topic seed but aren't the same search intent at all. Token/bigram
+    overlap can't tell those apart; a model reading the site's own system
+    prompt can."""
+    if not candidates:
+        return KeywordFilterResult([], model, 0, 0, 0, 0, 0.0, faked=True)
+    if _use_fake(api_key):
+        return KeywordFilterResult(list(candidates), model, 0, 0, 0, 0, 0.0, faked=True)
+
+    import anthropic  # lazy: keep import cost off the fake path
+
+    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+    listing = "\n".join(f"- {k}" for k in candidates)
+    message = (
+        "次のキーワード候補の中から、このサイトで実際に記事化する価値がある"
+        "（サイトの実際のテーマ・扱っている商品ジャンルに合っている）ものだけを"
+        "選んでください。ブランド名・ソフトウェア名など無関係な語や、たまたま"
+        "同じ単語を含むだけで意図がまったく違う語（例: 収納サイトに対する"
+        "「オフィス 365」＝Microsoft Officeソフトの検索）は除外してください。"
+        "判断に迷わない限り、基本的には多く残してください。\n\n"
+        f"{listing}\n\n"
+        "選んだら submit_relevant_keywords を呼び出してください。"
+    )
+    kwargs: dict = dict(
+        model=model,
+        max_tokens=max_tokens,
+        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": message}],
+        tools=[_FILTER_KEYWORDS_TOOL],
+        tool_choice={"type": "auto"},
+    )
+    try:
+        with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
+            msg = stream.get_final_message()
+    except TypeError:
+        with client.messages.stream(**kwargs) as stream:
+            msg = stream.get_final_message()
+
+    u = msg.usage
+    in_tok = int(getattr(u, "input_tokens", 0) or 0)
+    out_tok = int(getattr(u, "output_tokens", 0) or 0)
+    cr = int(getattr(u, "cache_read_input_tokens", 0) or 0)
+    cw = int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+    cost = cost_usd(model, in_tok, out_tok, cr, cw)
+
+    tool_use = next(
+        (b for b in msg.content if getattr(b, "type", None) == "tool_use"
+         and getattr(b, "name", None) == "submit_relevant_keywords"),
+        None,
+    )
+    if tool_use is None:
+        # fail open — a parse miss shouldn't silently zero out every
+        # candidate, just skip the extra filtering for this run
+        return KeywordFilterResult(list(candidates), model, in_tok, out_tok, cr, cw, cost)
+
+    relevant = tool_use.input.get("relevant")
+    if not isinstance(relevant, list):
+        return KeywordFilterResult(list(candidates), model, in_tok, out_tok, cr, cw, cost)
+
+    keep = {str(k).strip() for k in relevant}
+    kept = [c for c in candidates if c in keep]
+    return KeywordFilterResult(kept, model, in_tok, out_tok, cr, cw, cost)
+
+
 def _use_fake(api_key: str | None) -> bool:
     if os.environ.get("LLM_FAKE") == "1":
         return True
