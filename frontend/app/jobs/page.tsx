@@ -15,6 +15,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtDateTime, fmtUsd, jobStatusTone } from "@/lib/format";
+import { JOB_KIND_LABEL } from "@/lib/types";
 import type { Job } from "@/lib/types";
 
 function JobsInner() {
@@ -44,7 +45,9 @@ function JobsInner() {
           <SectionTitle>ジョブ詳細</SectionTitle>
           <Card className="flex flex-col gap-2">
             <div className="flex items-center gap-3">
-              <code className="font-mono text-[13px]">{detail.kind}</code>
+              <span className="text-[13px] font-medium">
+                {JOB_KIND_LABEL[detail.kind] ?? detail.kind}
+              </span>
               <Pill tone={jobStatusTone(detail.status)}>{detail.status}</Pill>
               <span className="text-[12px] text-ink2">
                 {fmtDateTime(detail.started_at)} → {fmtDateTime(detail.finished_at)}
@@ -90,8 +93,8 @@ function JobsInner() {
                 className={focusId === j.id ? "bg-accent/5" : ""}
               >
                 <Td>
-                  <a href={`/jobs?id=${j.id}`} className="font-mono text-accent hover:underline">
-                    {j.kind}
+                  <a href={`/jobs?id=${j.id}`} className="text-accent hover:underline">
+                    {JOB_KIND_LABEL[j.kind] ?? j.kind}
                   </a>
                 </Td>
                 <Td>

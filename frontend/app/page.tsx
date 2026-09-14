@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Card, Empty, ErrorNote, Pill, SectionTitle, Spinner, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtDateTime, fmtUsd, jobStatusTone } from "@/lib/format";
+import { JOB_KIND_LABEL } from "@/lib/types";
 import type { DomainSummary, Job, UsageLlm } from "@/lib/types";
 
 export default function Dashboard() {
@@ -112,8 +113,8 @@ export default function Dashboard() {
               {jobs.map((j) => (
                 <tr key={j.id}>
                   <td className="border-b border-border px-2.5 py-2">
-                    <Link href={`/jobs?id=${j.id}`} className="font-mono text-accent hover:underline">
-                      {j.kind}
+                    <Link href={`/jobs?id=${j.id}`} className="text-accent hover:underline">
+                      {JOB_KIND_LABEL[j.kind] ?? j.kind}
                     </Link>
                   </td>
                   <td className="border-b border-border px-2.5 py-2">

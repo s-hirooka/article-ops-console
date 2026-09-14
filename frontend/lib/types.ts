@@ -75,6 +75,16 @@ export interface ArticleDetail extends Article {
   faked: boolean | null;
 }
 
+export const JOB_KIND_LABEL: Record<string, string> = {
+  article_generate: "記事生成",
+  rank_sync: "順位同期",
+  analysis: "分析",
+  eyecatch: "アイキャッチ生成",
+  test_prompt: "プロンプトテスト",
+  topic_auto_generate: "テーマ自動選定＋記事生成",
+  improve_article: "AI改訂",
+};
+
 export interface Job {
   id: string;
   kind: string;
