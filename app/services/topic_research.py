@@ -411,6 +411,7 @@ def _discover_llm_first(
         "mode": "llm_first",
         "seeds_used": [],
         "llm_keywords_generated": len(keywords),
+        "llm_keywords": keywords,
         "threshold": threshold,
         "ideas_returned": len(metrics_rows),
         "covered_keywords": len(covered),
