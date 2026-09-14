@@ -250,11 +250,6 @@ def main() -> int:
     check("  broad_keyword_excluded is int", isinstance(ti.get("broad_keyword_excluded"), int), str(ti))
     check("  relevance_excluded is int (LLM_FAKE passthrough, so 0)",
           ti.get("relevance_excluded") == 0, str(ti))
-    check("  product_checked > 0 (AMAZON_FAKE gate ran)", ti.get("product_checked", 0) > 0, str(ti))
-    check("  recommended_top entries marked has_products",
-          all(c.get("has_products") is True for c in ti["recommended_top"]), str(ti["recommended_top"]))
-    check("  product_check_errors is 0 (AMAZON_FAKE never errors)",
-          ti.get("product_check_errors") == 0, str(ti))
     check("  no candidates under 3 significant words leaked through",
           all(len([t for t in k.replace("の", " ").split() if t]) >= 3 for k in kws), str(kws))
     check("  wp_posts_checked > 0 (WP_FAKE post list used)", ti.get("wp_posts_checked", 0) > 0, str(ti))

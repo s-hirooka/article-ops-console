@@ -188,7 +188,6 @@ export interface TopicCandidate {
   avg_monthly_searches: number | null;
   competition_level: string | null;
   competition_index: number | null;
-  has_products?: boolean;
 }
 
 export interface TopicIdeas {
@@ -203,9 +202,6 @@ export interface TopicIdeas {
   below_threshold_excluded: number;
   broad_keyword_excluded: number;
   relevance_excluded: number;
-  product_checked: number;
-  no_product_excluded: number;
-  product_check_errors: number;
   candidates: TopicCandidate[];
   recommended: TopicCandidate | null;
   recommended_top: TopicCandidate[];

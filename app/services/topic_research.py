@@ -9,10 +9,12 @@ we expand seed terms via Google Ads' GenerateKeywordIdeas, then subtract:
     "ハンガー ラック" are just as big as a one-word term)
   * off-topic homonym/brand matches Google Ads' expansion conflates with an
     on-topic seed (filter_relevant_keywords — an LLM call, not a heuristic)
-  * keywords Amazon has no real products for (rank_top_with_products — a
-    live Creators API search per shown candidate), since both domains'
-    monetization ultimately needs a real product to fill the page
 and keep those clearing the domain's monthly-search threshold.
+
+(A live per-candidate Amazon product-availability check used to run here too
+— removed 2026-09-14 at the user's request after persistent Creators API
+errors in production made it reject every candidate; see git history if
+revisiting this.)
 
 One Google Ads API call per run; recorded in api_usage.
 """
@@ -26,15 +28,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import models as m
-from app.integrations.amazon_products import AmazonProductsError, search_products
 from app.integrations.google_ads_keywords import generate_keyword_ideas
 from app.services.text_similarity import bigrams, overlap_score
-
-# Bound on how many candidates get an Amazon availability check per run —
-# each is a real API call (~1s), and only the top of the ranking is ever
-# shown, so there's no point checking deep into a long tail that will never
-# be recommended anyway.
-_MAX_PRODUCT_CHECKS = 15
 
 # Above this character-bigram overlap between a candidate keyword and an
 # existing WordPress post title, treat the topic as already covered. Chosen
@@ -184,83 +179,6 @@ def pick_best(candidates: list[dict]) -> dict | None:
     return top[0] if top else None
 
 
-def _check_amazon_products(keyword: str) -> tuple[bool | None, str | None]:
-    """(found, error_message). found: True / False (confirmed empty) / None
-    (the search itself failed — rate limit, credential issue, network
-    blip). Distinguishing the last case matters: silently treating "the API
-    call errored" the same as "Amazon has no products" is exactly what made
-    a real problem look like every candidate genuinely having no inventory
-    (24 checked, 24 rejected in one production run — the same 3 keywords
-    worked fine tested individually seconds later). The error message is
-    kept (not just swallowed) so a *second* occurrence is diagnosable
-    instead of another guessing round — this bug wasn't actually fixed by
-    the retry/pacing logic alone; it recurred with pacing in place too."""
-    try:
-        return bool(search_products(keyword, limit=1)), None
-    except AmazonProductsError as exc:
-        return None, str(exc)
-    except Exception as exc:
-        return None, f"{type(exc).__name__}: {exc}"
-
-
-# Consecutive failed *API calls* (not "no products found" results) before
-# giving up on further checks — a burst of these means throttling or a
-# credentials problem, not that the whole rest of the ranked list happens
-# to have no inventory.
-_MAX_CONSECUTIVE_ERRORS = 3
-
-
-def rank_top_with_products(
-    candidates: list[dict], *, limit: int = 10, max_checks: int = _MAX_PRODUCT_CHECKS
-) -> tuple[list[dict], int, int, int, str | None]:
-    """`rank_top`, but only keeping candidates a real Amazon search actually
-    finds products for — recommending a keyword neither Amazon (product
-    tokens) nor vc_auto_ads can fill is recommending a page with a gap in it
-    by construction. Walks the ranking checking one candidate at a time
-    (real API calls, so bounded by max_checks, and paced — see the sleep
-    below) until `limit` verified candidates are found or the ranking/check
-    budget runs out.
-
-    Returns (kept, checked_count, rejected_for_no_products_count,
-    errors_count, first_error_message).
-    """
-    import os
-    import time
-
-    fake = os.environ.get("AMAZON_FAKE") == "1"
-    ranked = sorted(candidates, key=_balance_score, reverse=True)
-    kept: list[dict] = []
-    checked = 0
-    no_products = 0
-    errors = 0
-    consecutive_errors = 0
-    first_error: str | None = None
-    for c in ranked:
-        if len(kept) >= limit or checked >= max_checks:
-            break
-        if checked > 0 and not fake:
-            # Amazon Creators API throttles per-second on lower sales tiers;
-            # a bare loop with no pacing is what triggered the bug above.
-            # Skipped in AMAZON_FAKE mode — nothing to pace against.
-            time.sleep(1.1)
-        checked += 1
-        found, err = _check_amazon_products(c["keyword"])
-        if found is True:
-            kept.append({**c, "has_products": True})
-            consecutive_errors = 0
-        elif found is False:
-            no_products += 1
-            consecutive_errors = 0
-        else:  # the search itself failed — don't blame "no products"
-            errors += 1
-            consecutive_errors += 1
-            if first_error is None:
-                first_error = err
-            if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
-                break  # likely throttled/credentials — stop burning through the rest
-    return kept, checked, no_products, errors, first_error
-
-
 def discover(
     session: Session,
     *,
@@ -389,14 +307,7 @@ def discover(
         except Exception:
             pass
 
-    # Product-availability gate: both domains' monetization (Amazon Creators
-    # API tokens on lifehouse2026, vc_auto_ads on comfortablelivinglab)
-    # ultimately needs Amazon to actually have matching products — recommend
-    # a keyword it doesn't and the article goes live with an empty product
-    # section either way. Only the shown top-10 gets this (real API calls);
-    # the full `candidates` list stays as ranked/relevance-filtered above.
-    recommended_top, product_checked, no_product_excluded, product_check_errors, \
-        product_check_error_sample = rank_top_with_products(candidates, limit=10)
+    recommended_top = rank_top(candidates, limit=10)
 
     return {
         "domain_id": domain_id,
@@ -410,12 +321,8 @@ def discover(
         "below_threshold_excluded": below_threshold_excluded,
         "broad_keyword_excluded": broad_keyword_excluded,
         "relevance_excluded": relevance_excluded,
-        "product_checked": product_checked,
-        "no_product_excluded": no_product_excluded,
-        "product_check_errors": product_check_errors,
-        "product_check_error_sample": product_check_error_sample,
         "candidates": candidates,
-        "recommended": recommended_top[0] if recommended_top else None,
+        "recommended": pick_best(candidates),
         "recommended_top": recommended_top,
     }
 
