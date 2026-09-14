@@ -60,6 +60,7 @@ class FillResult:
     html: str
     filled: list[str] = field(default_factory=list)      # search phrases resolved
     unresolved: list[str] = field(default_factory=list)   # search phrases with no hits
+    errors: dict[str, str] = field(default_factory=dict)  # phrase -> last raw error seen (diagnostic)
 
 
 def _price_text(p: Product) -> str:
@@ -89,41 +90,41 @@ def _render(kind: str, p: Product) -> str:
     return _block_html(p)  # BLOCK
 
 
-def _search_retrying(phrase: str, limit: int) -> list[Product]:
-    """A genuine "no such product" and a transient Amazon API fault (seen in
-    production as an intermittent InvalidPartnerTag-style error under rapid
-    sequential calls) both surface as AmazonProductsError to the caller —
-    but re-running the exact same phrase locally right after a production
-    miss has repeatedly found a real hit on the first try, pointing at
-    rate-limiting rather than an empty result. One retry after a short
-    backoff before giving up on this phrase."""
+def _search_retrying(phrase: str, limit: int) -> tuple[list[Product], str | None]:
+    """A genuine "no such product" and a real Amazon API fault both surface
+    as AmazonProductsError to the caller with no way to tell them apart —
+    so this returns the raw error text alongside the hits (empty string
+    error = a clean zero-result search, not a fault) instead of swallowing
+    it, and retries once after a short backoff in case it's transient."""
     try:
-        return search_products(phrase, limit=limit)
-    except AmazonProductsError:
+        return search_products(phrase, limit=limit), None
+    except AmazonProductsError as exc:
         time.sleep(1.5)
         try:
-            return search_products(phrase, limit=limit)
-        except AmazonProductsError:
-            return []
+            return search_products(phrase, limit=limit), None
+        except AmazonProductsError as exc2:
+            return [], str(exc2) or str(exc)
 
 
-def _search_with_fallback(phrase: str, limit: int) -> list[Product]:
+def _search_with_fallback(phrase: str, limit: int) -> tuple[list[Product], str | None]:
     """Amazon search effectively ANDs every token together, so a phrase the
     model over-specified (brand name + install type + niche function stacked
     on top of the base category — "パナソニック対応 ドアホン交換用レンズ
     曇り対策") often matches nothing even though a broader version of the same
     idea is a real, findable product. Retry with the trailing (most specific)
     token dropped, down to a 2-token floor, before giving up."""
-    hits = _search_retrying(phrase, limit)
+    hits, err = _search_retrying(phrase, limit)
     if hits:
-        return hits
+        return hits, None
     tokens = phrase.split()
     while len(tokens) > 2:
         tokens = tokens[:-1]
-        hits = _search_retrying(" ".join(tokens), limit)
+        hits, err2 = _search_retrying(" ".join(tokens), limit)
         if hits:
-            return hits
-    return []
+            return hits, None
+        if err2:
+            err = err2
+    return [], err
 
 
 def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
@@ -133,6 +134,7 @@ def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
     cache: dict[str, Product | None] = {}
     filled: list[str] = []
     unresolved: list[str] = []
+    errors: dict[str, str] = {}
 
     # Small pacing between distinct Amazon lookups — firing several searches
     # back-to-back in one article's product fill is exactly the pattern that
@@ -141,13 +143,15 @@ def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
     for i, phrase in enumerate(phrases):
         if i and pace:
             time.sleep(1.1)
-        hits = _search_with_fallback(phrase, limit_per_lookup)
+        hits, err = _search_with_fallback(phrase, limit_per_lookup)
         if hits:
             cache[phrase] = hits[0]
             filled.append(phrase)
         else:
             cache[phrase] = None
             unresolved.append(phrase)
+            if err:
+                errors[phrase] = err
 
     def _sub_token(m: re.Match) -> str:
         kind, phrase = m.group(1), m.group(2).strip()
@@ -173,7 +177,7 @@ def fill_products(html: str, *, limit_per_lookup: int = 1) -> FillResult:
     html = _LEGACY_RE.sub(_sub_legacy, html)
     html = _TOKEN_RE.sub(_sub_token, html)
     html = _NOTFOUND_RE.sub(_sub_notfound, html)
-    return FillResult(html=html, filled=filled, unresolved=unresolved)
+    return FillResult(html=html, filled=filled, unresolved=unresolved, errors=errors)
 
 
 def edit_article(
@@ -267,6 +271,7 @@ def refill_article(session: Session, *, account_id: int, article_id: int) -> dic
         "changed": body != before,
         "filled": result.filled,
         "unresolved": result.unresolved,
+        "errors": result.errors,
         "related_linked": related_linked,
         "related_slots_left_empty": related_empty,
     }
