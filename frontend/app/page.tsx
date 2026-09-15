@@ -52,9 +52,14 @@ export default function Dashboard() {
 
       <SectionTitle
         action={
-          <Link href="/domains/add" className="text-[12px] text-accent hover:underline">
-            ＋ ドメイン追加
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/domains/add" className="text-[12px] text-accent hover:underline">
+              ＋ ドメイン追加
+            </Link>
+            <Link href="/domains/delete" className="text-[12px] text-accent hover:underline">
+              ドメイン削除
+            </Link>
+          </div>
         }
       >
         ドメイン（{domains.length}）

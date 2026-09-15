@@ -2,9 +2,9 @@
 
 import Editor from "@monaco-editor/react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { Button, Card, ErrorNote, Empty, Input, SectionTitle, Spinner } from "@/components/ui";
+import { Button, Card, ErrorNote, Empty, SectionTitle, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtDateTime } from "@/lib/format";
 import { COMPONENT_LABELS, PROMPT_COMPONENTS, type PromptComponent } from "@/lib/types";
@@ -19,10 +19,8 @@ export default function PromptsPage() {
 
 function PromptsInner() {
   const sp = useSearchParams();
-  const router = useRouter();
   const domainId = Number(sp.get("id"));
 
-  const [domainKey, setDomainKey] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<Record<string, PromptComponent> | null>(null);
   const [active, setActive] = useState<string>(PROMPT_COMPONENTS[0]);
   const [draft, setDraft] = useState<string>("");
@@ -40,7 +38,6 @@ function PromptsInner() {
       .prompts(domainId)
       .then(setPrompts)
       .catch((e) => setErr(e.message));
-    api.domain(domainId).then((d) => setDomainKey(d.domain_key)).catch(() => setDomainKey(null));
   }, [domainId]);
 
   useEffect(() => {
@@ -181,84 +178,6 @@ function PromptsInner() {
           ))}
         </div>
       )}
-
-      <DangerZone domainId={domainId} domainKey={domainKey} router={router} />
     </>
-  );
-}
-
-function DangerZone({
-  domainId,
-  domainKey,
-  router,
-}: {
-  domainId: number;
-  domainKey: string | null;
-  router: ReturnType<typeof useRouter>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function del() {
-    if (!domainKey || confirmText !== domainKey) return;
-    setDeleting(true);
-    setErr(null);
-    try {
-      await api.deleteDomain(domainId, confirmText);
-      router.push("/");
-    } catch (e) {
-      setErr((e as Error).message);
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <div className="mt-20 border-t border-border pt-3 text-[11px] text-ink2/60">
-      {!open ? (
-        <button onClick={() => setOpen(true)} className="hover:underline">
-          ドメインの管理
-        </button>
-      ) : (
-        <div className="max-w-md rounded-lg border border-crit/30 p-3">
-          <div className="text-[12px] font-medium text-crit">
-            このドメインを削除
-          </div>
-          <p className="mt-1 text-[12px] text-ink2">
-            記事・順位履歴・プロンプト設定を含め、このドメインに関するデータが全て削除されます。
-            元に戻せません（WordPress側の投稿は残ります）。続ける場合はドメインキー「
-            <span className="font-mono">{domainKey}</span>」を入力してください。
-          </p>
-          <Input
-            value={confirmText}
-            onChange={(e) => setConfirmText(e.target.value)}
-            placeholder={domainKey ?? ""}
-            className="mt-2 w-full"
-          />
-          <div className="mt-2 flex items-center gap-2">
-            <Button
-              variant="ghost"
-              onClick={del}
-              disabled={deleting || !domainKey || confirmText !== domainKey}
-              className="border-crit/40 text-crit hover:bg-crit/5"
-            >
-              {deleting ? "削除中…" : "完全に削除する"}
-            </Button>
-            <button
-              onClick={() => {
-                setOpen(false);
-                setConfirmText("");
-                setErr(null);
-              }}
-              className="text-[12px] text-ink2 hover:text-ink"
-            >
-              キャンセル
-            </button>
-          </div>
-          {err && <div className="mt-2 text-[12px] text-crit">{err}</div>}
-        </div>
-      )}
-    </div>
   );
 }
