@@ -341,6 +341,30 @@ def main() -> int:
     r = c.get("/api/oauth/google/status")
     check("oauth status -> not connected", r.status_code == 200 and r.json()["connected"] is False)
 
+    # --- create + delete a throwaway domain ----------------------------
+    r = c.post("/api/domains", headers=H, json={
+        "domain_key": "throwaway-smoke-domain", "base_url": "https://throwaway.example",
+        "gsc_site_url": "sc-domain:throwaway.example", "keyword_threshold": 500})
+    check("POST /api/domains -> 201", r.status_code == 201, r.text)
+    throwaway_id = r.json()["id"]
+
+    r = c.post("/api/jobs", headers=H, json={
+        "kind": "article_generate", "domain_id": throwaway_id,
+        "params": {"target_keyword": "捨てる 記事", "search_volume": 900, "force": True}})
+    throwaway_article_id = c.get(f"/api/jobs/{r.json()['job_id']}").json()["result"]["article_id"]
+
+    r = c.delete(f"/api/domains/{throwaway_id}?confirm_domain_key=wrong-key", headers=H)
+    check("DELETE /api/domains wrong confirm -> 422", r.status_code == 422, r.text)
+
+    r = c.delete(
+        f"/api/domains/{throwaway_id}?confirm_domain_key=throwaway-smoke-domain", headers=H)
+    check("DELETE /api/domains correct confirm -> 200", r.status_code == 200, r.text)
+    check("  articles_deleted counted", r.json().get("articles_deleted") == 1, r.text)
+    check("  domain gone (404)",
+          c.get(f"/api/domains/{throwaway_id}", headers=H).status_code == 404)
+    check("  cascaded article gone (404)",
+          c.get(f"/api/articles/{throwaway_article_id}", headers=H).status_code == 404)
+
     try:
         os.unlink(_tmp.name)
     except OSError:

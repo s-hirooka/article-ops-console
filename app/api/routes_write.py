@@ -83,6 +83,37 @@ def create_domain(body: DomainIn, session: Session = Depends(db)) -> dict:
     return {"id": d.id, "domain_key": d.domain_key}
 
 
+@router.delete("/domains/{domain_id}")
+def delete_domain(
+    domain_id: int,
+    confirm_domain_key: str,
+    session: Session = Depends(db),
+) -> dict:
+    """Deletes a domain and everything scoped to it (prompts, articles, rank
+    history, opportunity scores, alerts — all ON DELETE CASCADE; jobs and
+    llm_usage rows are kept with domain_id set to NULL rather than deleted,
+    so cost history survives). Irreversible, so the caller must echo the
+    domain's own domain_key back exactly — a plain confirm dialog is too easy
+    to click through without reading which domain it's about to destroy."""
+    d = session.get(m.Domain, domain_id)
+    if d is None or d.account_id != _aid(session):
+        raise HTTPException(404, "domain が見つかりません。")
+    if confirm_domain_key != d.domain_key:
+        raise HTTPException(422, "確認用のドメインキーが一致しません。")
+
+    domain_key = d.domain_key
+    articles_deleted = session.scalar(
+        select(func.count()).select_from(m.Article).where(m.Article.domain_id == domain_id)
+    )
+    session.delete(d)
+    session.flush()
+    return {
+        "deleted": True,
+        "domain_key": domain_key,
+        "articles_deleted": int(articles_deleted or 0),
+    }
+
+
 # --- per-domain prompt components ------------------------------------------
 class PromptIn(BaseModel):
     body: str = Field(min_length=1)

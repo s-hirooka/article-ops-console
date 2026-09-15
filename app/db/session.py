@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import AppSettings
@@ -28,6 +28,15 @@ engine = create_engine(
     future=True,
     connect_args={} if _is_pg else {"check_same_thread": False},
 )
+
+if not _is_pg:
+    # SQLite ignores ON DELETE CASCADE unless foreign key enforcement is
+    # turned on per-connection — off by default. Without this, smoke tests
+    # against SQLite silently leave orphaned rows that Postgres (production)
+    # would actually cascade-delete, masking real cascade bugs.
+    @event.listens_for(engine, "connect")
+    def _sqlite_enable_fk(dbapi_conn, _record):
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

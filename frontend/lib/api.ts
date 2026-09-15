@@ -90,6 +90,11 @@ export const api = {
     gsc_site_url: string;
     keyword_threshold?: number;
   }) => req<{ id: number; domain_key: string }>("/api/domains", { method: "POST", json: body }),
+  deleteDomain: (id: number, confirmDomainKey: string) =>
+    req<{ deleted: boolean; domain_key: string; articles_deleted: number }>(
+      `/api/domains/${id}?confirm_domain_key=${encodeURIComponent(confirmDomainKey)}`,
+      { method: "DELETE" },
+    ),
 
   rankHistory: (id: number, days = 90) =>
     req<RankRow[]>(`/api/domains/${id}/rank-history?days=${days}`),
