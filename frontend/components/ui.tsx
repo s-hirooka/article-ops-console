@@ -36,11 +36,20 @@ export function Card({
   );
 }
 
-export function SectionTitle({ children }: { children: ReactNode }) {
+export function SectionTitle({
+  children,
+  action,
+}: {
+  children: ReactNode;
+  action?: ReactNode;
+}) {
   return (
-    <h2 className="mb-3 mt-8 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink2">
-      {children}
-    </h2>
+    <div className="mb-3 mt-8 flex items-center justify-between gap-3">
+      <h2 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink2">
+        {children}
+      </h2>
+      {action}
+    </div>
   );
 }
 

@@ -50,7 +50,15 @@ export default function Dashboard() {
         </div>
       </Card>
 
-      <SectionTitle>ドメイン（{domains.length}）</SectionTitle>
+      <SectionTitle
+        action={
+          <Link href="/domains/add" className="text-[12px] text-accent hover:underline">
+            ＋ ドメイン追加
+          </Link>
+        }
+      >
+        ドメイン（{domains.length}）
+      </SectionTitle>
       {domains.length === 0 ? (
         <Empty>ドメインがありません。</Empty>
       ) : (
