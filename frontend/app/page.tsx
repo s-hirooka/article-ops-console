@@ -58,14 +58,15 @@ export default function Dashboard() {
           {domains.map((d) => (
             <Card key={d.id}>
               <h3 className="text-[14px] font-semibold">
-                <Link href={`/domains?id=${d.id}`} className="text-accent hover:underline">
+                <Link
+                  href={`/domains?id=${d.id}`}
+                  className="inline-flex items-center gap-1.5 text-accent hover:underline"
+                >
+                  <span aria-hidden>↗</span>
                   {d.domain_key}
                 </Link>
               </h3>
               <div className="mt-0.5 break-all font-mono text-[12px] text-ink2">{d.base_url}</div>
-              <div className="mt-3 flex gap-6">
-                <Stat value={d.keyword_threshold} label="検索数の下限" />
-              </div>
               <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
                 <Link
                   href={`/domains/topics?id=${d.id}`}
