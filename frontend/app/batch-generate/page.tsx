@@ -35,16 +35,20 @@ export default function BatchGeneratePage() {
     setStartErr(null);
     setStarted(null);
     try {
-      const results = await Promise.all(
-        selections.map(async ({ domain, count }) => {
-          const r = await api.runJob({
-            kind: "topic_auto_generate",
-            domain_id: domain.id,
-            params: { count, _async: true },
-          });
-          return { domain_key: domain.domain_key, count, job_id: r.job_id };
-        }),
-      );
+      // Fire one at a time, not Promise.all: creating two "_async" jobs in
+      // the same instant has been observed to silently drop one of the two
+      // background tasks on Render's free plan (it never starts, stuck at
+      // "queued" forever) -- a brief gap between requests avoids the race.
+      const results: { domain_key: string; count: number; job_id: string }[] = [];
+      for (const { domain, count } of selections) {
+        if (results.length > 0) await new Promise((resolve) => setTimeout(resolve, 1500));
+        const r = await api.runJob({
+          kind: "topic_auto_generate",
+          domain_id: domain.id,
+          params: { count, _async: true },
+        });
+        results.push({ domain_key: domain.domain_key, count, job_id: r.job_id });
+      }
       setStarted(results);
       setCounts({});
     } catch (e) {
