@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtUsd } from "@/lib/format";
+import { JOB_STATUS_LABEL } from "@/lib/types";
 import type { DomainDetail } from "@/lib/types";
 
 type GenResult = {
@@ -77,7 +78,7 @@ function NewArticleInner() {
       if (job.status === "succeeded") {
         setResult((job.result as GenResult) ?? {});
       } else {
-        setFailed(job.error || `ジョブが ${job.status} で終了しました`);
+        setFailed(job.error || `ジョブが${JOB_STATUS_LABEL[job.status] ?? job.status}で終了しました`);
       }
     } catch (e) {
       setFailed((e as Error).message);

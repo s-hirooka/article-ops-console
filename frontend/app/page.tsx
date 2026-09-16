@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Card, Empty, ErrorNote, Pill, SectionTitle, Spinner, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtDateTime, fmtUsd, jobStatusTone } from "@/lib/format";
-import { JOB_KIND_LABEL } from "@/lib/types";
+import { JOB_KIND_LABEL, JOB_STATUS_LABEL } from "@/lib/types";
 import type { DomainSummary, Job, UsageLlm } from "@/lib/types";
 
 export default function Dashboard() {
@@ -132,7 +132,7 @@ export default function Dashboard() {
                     </Link>
                   </td>
                   <td className="border-b border-border px-2.5 py-2">
-                    <Pill tone={jobStatusTone(j.status)}>{j.status}</Pill>
+                    <Pill tone={jobStatusTone(j.status)}>{JOB_STATUS_LABEL[j.status] ?? j.status}</Pill>
                   </td>
                   <td className="border-b border-border px-2.5 py-2 text-right font-mono tabular-nums">
                     {j.domain_id ?? "—"}

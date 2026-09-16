@@ -15,7 +15,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtDateTime, fmtUsd, jobStatusTone } from "@/lib/format";
-import { JOB_KIND_LABEL } from "@/lib/types";
+import { JOB_KIND_LABEL, JOB_STATUS_LABEL } from "@/lib/types";
 import type { Job } from "@/lib/types";
 
 function JobsInner() {
@@ -48,7 +48,9 @@ function JobsInner() {
               <span className="text-[13px] font-medium">
                 {JOB_KIND_LABEL[detail.kind] ?? detail.kind}
               </span>
-              <Pill tone={jobStatusTone(detail.status)}>{detail.status}</Pill>
+              <Pill tone={jobStatusTone(detail.status)}>
+                {JOB_STATUS_LABEL[detail.status] ?? detail.status}
+              </Pill>
               <span className="text-[12px] text-ink2">
                 {fmtDateTime(detail.started_at)} → {fmtDateTime(detail.finished_at)}
               </span>
@@ -98,7 +100,9 @@ function JobsInner() {
                   </a>
                 </Td>
                 <Td>
-                  <Pill tone={jobStatusTone(j.status)}>{j.status}</Pill>
+                  <Pill tone={jobStatusTone(j.status)}>
+                    {JOB_STATUS_LABEL[j.status] ?? j.status}
+                  </Pill>
                 </Td>
                 <Td num>{j.domain_id ?? "—"}</Td>
                 <Td num>{fmtUsd(j.llm_cost_usd, 4)}</Td>

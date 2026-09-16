@@ -85,6 +85,14 @@ export const JOB_KIND_LABEL: Record<string, string> = {
   improve_article: "AI改訂",
 };
 
+export const JOB_STATUS_LABEL: Record<string, string> = {
+  queued: "待機中",
+  running: "実行中",
+  succeeded: "成功",
+  failed: "失敗",
+  cancelled: "キャンセル",
+};
+
 export interface Job {
   id: string;
   kind: string;
