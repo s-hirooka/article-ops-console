@@ -275,6 +275,9 @@ def list_jobs(
     limit: int = Query(50, ge=1, le=200),
     session: Session = Depends(db),
 ) -> list[dict]:
+    from app.services.jobs import requeue_stale
+
+    requeue_stale(_aid(session))
     rows = session.scalars(
         select(m.Job)
         .where(m.Job.account_id == _aid(session))

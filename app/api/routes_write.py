@@ -428,6 +428,7 @@ def delete_article_endpoint(
 
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str, session: Session = Depends(db)) -> dict:
+    jobsvc.requeue_stale(_aid(session))
     j = session.get(m.Job, job_id)
     if j is None or j.account_id != _aid(session):
         raise HTTPException(404, "job が見つかりません。")

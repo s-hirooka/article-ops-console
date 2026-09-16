@@ -157,6 +157,34 @@ def main() -> int:
         for dm in cj.get("domains", [])
     ), str(cj))
 
+    # --- requeue_stale: recover a job whose background task never ran ----
+    # (simulates the cold-start race confirmed in production: a job stuck
+    # "queued" with started_at still null, long after it was created)
+    import time as _time
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    from app.db import models as _m
+    from app.db.session import SessionLocal as _SessionLocal
+
+    r = c.post("/api/jobs", headers=H,
+               json={"kind": "rank_sync", "domain_id": 1, "params": {"_async": True}})
+    stuck_id = r.json()["job_id"]
+    with _SessionLocal() as s:
+        job = s.get(_m.Job, stuck_id)
+        job.created_at = _dt.now(_tz.utc) - _td(seconds=120)
+        s.commit()
+
+    r = c.get("/api/jobs?limit=5", headers=H)
+    check("GET /api/jobs -> 200 (triggers requeue_stale)", r.status_code == 200, r.text)
+
+    final = None
+    for _ in range(30):
+        final = c.get(f"/api/jobs/{stuck_id}", headers=H).json()
+        if final["status"] in ("succeeded", "failed"):
+            break
+        _time.sleep(0.2)
+    check("  stale queued job self-healed", final and final["status"] == "succeeded", str(final))
+
     # --- analysis -----------------------------------------------------
     r = c.post("/api/jobs", headers=H, json={"kind": "analysis", "domain_id": 1})
     j = c.get(f"/api/jobs/{r.json()['job_id']}").json()

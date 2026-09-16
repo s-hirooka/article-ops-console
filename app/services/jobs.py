@@ -9,10 +9,12 @@ the real work inside ``tenant_session(account_id)`` so RLS applies.
 """
 from __future__ import annotations
 
+import threading
 import traceback
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import models as m
@@ -25,6 +27,15 @@ VALID_KINDS = {
     "article_generate", "rank_sync", "analysis", "eyecatch", "test_prompt",
     "topic_auto_generate", "improve_article",
 }
+
+# A job stuck "queued" with no started_at this long never actually got its
+# BackgroundTasks callback run — most often a cold-start race, where the
+# request that created it lands on a free-tier instance mid-spin-up and the
+# scheduled task is silently lost. Confirmed in production 2026-09-15/16:
+# two topic_auto_generate jobs created 2.8s apart after a 4h+ idle gap, the
+# first stuck at started_at=null forever, the second (landing once the
+# instance had finished waking up) ran fine.
+_STALE_QUEUE_SECONDS = 90
 
 
 def enqueue(
@@ -54,6 +65,37 @@ def enqueue(
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def requeue_stale(account_id: int) -> list[str]:
+    """Opportunistic self-heal, called from the job-listing endpoints (which
+    get hit constantly — the dashboard, the jobs page, JobToasts' 8s poll —
+    so a stuck job gets noticed within seconds of crossing the threshold,
+    not left queued forever). Claims each stale job by stamping started_at
+    *before* spawning anything, in the same transaction as the SELECT, so a
+    second sweep call landing moments later (plausible given how often this
+    runs) can't also claim it and run it twice. Dispatches via a plain
+    daemon thread rather than another BackgroundTasks call, since that
+    mechanism is what dropped it the first time."""
+    with tenant_session(account_id) as s:
+        cutoff = _now() - timedelta(seconds=_STALE_QUEUE_SECONDS)
+        stale = s.scalars(
+            select(m.Job).where(
+                m.Job.account_id == account_id,
+                m.Job.status == "queued",
+                m.Job.started_at.is_(None),
+                m.Job.created_at < cutoff,
+            )
+        ).all()
+        job_ids = [j.id for j in stale]
+        for j in stale:
+            j.status = "running"
+            j.started_at = _now()  # claim now; run_job() will overwrite both
+        s.flush()
+
+    for job_id in job_ids:
+        threading.Thread(target=run_job, args=(job_id, account_id), daemon=True).start()
+    return job_ids
 
 
 def run_job(job_id: str, account_id: int | None = None) -> dict:
