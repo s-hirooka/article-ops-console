@@ -48,6 +48,13 @@ export default function Dashboard() {
           超過時の動作 <code className="rounded bg-surface2 px-1.5 py-0.5 font-mono">{usage.budget_action}</code>
           {usage.remaining_usd != null && <> ・ 残り {fmtUsd(usage.remaining_usd)}</>}
         </div>
+        {usage.anthropic_credit_exhausted_at && (
+          <div className="mt-3 rounded-lg border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
+            ⚠️ Anthropic APIのクレジット残高が不足しています（
+            {fmtDateTime(usage.anthropic_credit_exhausted_at)} 検知）。
+            Claude Console（console.anthropic.com の Plans & Billing）でクレジットを追加してください。
+          </div>
+        )}
       </Card>
 
       <SectionTitle

@@ -317,6 +317,7 @@ def usage_llm(
         "budget_action": acct.llm_budget_action if acct else None,
         "remaining_usd": None if budget is None else round(budget - spent, 4),
         "by_model": {model: round(float(c), 4) for model, c in by_model},
+        "anthropic_credit_exhausted_at": acct.anthropic_credit_exhausted_at if acct else None,
     }
 
 

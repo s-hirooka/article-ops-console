@@ -134,6 +134,14 @@ def record_usage(
         billing_period=period or _period(),
     )
     session.add(row)
+
+    # A successful call is proof the account has credit again — clear a
+    # previously-flagged exhaustion rather than leaving the dashboard
+    # warning stuck on until someone happens to look again.
+    acct = session.get(m.Account, account_id)
+    if acct is not None and acct.anthropic_credit_exhausted_at is not None:
+        acct.anthropic_credit_exhausted_at = None
+
     return row
 
 

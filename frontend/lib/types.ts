@@ -122,6 +122,7 @@ export interface UsageLlm {
   budget_action: string | null;
   remaining_usd: number | null;
   by_model: Record<string, number>;
+  anthropic_credit_exhausted_at: string | null;
 }
 
 export type ActionHint = "ctr" | "rewrite" | "weak" | "review";

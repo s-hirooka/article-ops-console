@@ -94,6 +94,12 @@ class DraftResult:
     faked: bool = False
 
 
+class CreditExhaustedError(RuntimeError):
+    """Anthropic rejected the request because the account is out of credit —
+    distinct from other RuntimeErrors so the caller (jobs.py) can flag it at
+    the account level instead of just failing the one job."""
+
+
 def _translate_anthropic_error(exc) -> str:
     """The SDK's own exception text (and, further up the call stack, a full
     Python traceback) is technical and was surfacing verbatim in the UI —
@@ -132,7 +138,14 @@ def _stream_final_message(client, kwargs: dict):
             with client.messages.stream(**kwargs) as stream:
                 return stream.get_final_message()
     except anthropic.APIStatusError as exc:
-        raise RuntimeError(_translate_anthropic_error(exc)) from exc
+        message = _translate_anthropic_error(exc)
+        body = getattr(exc, "body", None)
+        raw = ""
+        if isinstance(body, dict) and isinstance(body.get("error"), dict):
+            raw = body["error"].get("message") or ""
+        if "credit balance is too low" in (raw or str(exc)).lower():
+            raise CreditExhaustedError(message) from exc
+        raise RuntimeError(message) from exc
 
 
 def _user_message(req: DraftRequest) -> str:

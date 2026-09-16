@@ -60,6 +60,7 @@ class Account(Base):
     draft_model: Mapped[str] = mapped_column(
         Text, nullable=False, server_default="claude-sonnet-5"
     )
+    anthropic_credit_exhausted_at: Mapped[datetime | None] = mapped_column(TS)
 
     members: Mapped[list["AccountMember"]] = relationship(back_populates="account")
     domains: Mapped[list["Domain"]] = relationship(back_populates="account")

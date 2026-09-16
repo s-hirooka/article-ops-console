@@ -22,6 +22,7 @@ from app.db.session import SessionLocal, tenant_session
 from app.services import prompt_assembly
 from app.services.article_pipeline import PipelineError, run_article_generate
 from app.services.budget import BudgetExceeded
+from app.services.llm import CreditExhaustedError
 
 VALID_KINDS = {
     "article_generate", "rank_sync", "analysis", "eyecatch", "test_prompt",
@@ -65,6 +66,12 @@ def enqueue(
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _flag_credit_exhausted(s: Session, account_id: int) -> None:
+    acct = s.get(m.Account, account_id)
+    if acct is not None:
+        acct.anthropic_credit_exhausted_at = _now()
 
 
 def requeue_stale(account_id: int) -> list[str]:
@@ -135,6 +142,8 @@ def run_job(job_id: str, account_id: int | None = None) -> dict:
             # WordPressError — all carry a user-readable message.
             job.status = "failed"
             job.error = str(exc)
+            if isinstance(exc, CreditExhaustedError):
+                _flag_credit_exhausted(s, job.account_id)
         except Exception as exc:  # pragma: no cover - unexpected
             job.status = "failed"
             job.error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1500:]}"
@@ -226,6 +235,8 @@ def _dispatch(s: Session, job: m.Job) -> dict:
                 })
             except (PipelineError, BudgetExceeded, RuntimeError) as exc:
                 errors.append(f"{i + 1}件目: {exc}")
+                if isinstance(exc, CreditExhaustedError):
+                    _flag_credit_exhausted(s, job.account_id)
                 break
         job.llm_cost_usd = total_cost
         if not articles and errors:
