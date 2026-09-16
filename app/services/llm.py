@@ -94,6 +94,47 @@ class DraftResult:
     faked: bool = False
 
 
+def _translate_anthropic_error(exc) -> str:
+    """The SDK's own exception text (and, further up the call stack, a full
+    Python traceback) is technical and was surfacing verbatim in the UI —
+    seen in production as a wall of stack-trace text where a one-line
+    explanation belongs. Pull the actual message out of the response body
+    and recognize the couple of cases a user can act on."""
+    body = getattr(exc, "body", None)
+    msg = ""
+    if isinstance(body, dict):
+        msg = ((body.get("error") or {}).get("message") or "") if isinstance(body.get("error"), dict) else ""
+    msg = msg or str(exc)
+    low = msg.lower()
+    if "credit balance is too low" in low:
+        return (
+            "Anthropic APIのクレジット残高が不足しています。"
+            "Claude Console（console.anthropic.com の Plans & Billing）でクレジットを"
+            "追加するか、自動リロードを有効にしてください。"
+        )
+    if getattr(exc, "status_code", None) == 429 or "rate limit" in low:
+        return "Anthropic APIのレート制限に達しました。しばらく待ってから再試行してください。"
+    return f"Anthropic APIエラー（{getattr(exc, 'status_code', '?')}）: {msg[:200]}"
+
+
+def _stream_final_message(client, kwargs: dict):
+    """Every call site here runs the same streamed request with the same
+    adaptive-thinking-unsupported fallback; centralized so the Anthropic
+    API error translation only has to happen in one place."""
+    import anthropic
+
+    try:
+        try:
+            with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
+                return stream.get_final_message()
+        except TypeError:
+            # SDK too old for the adaptive thinking kwarg — run without it.
+            with client.messages.stream(**kwargs) as stream:
+                return stream.get_final_message()
+    except anthropic.APIStatusError as exc:
+        raise RuntimeError(_translate_anthropic_error(exc)) from exc
+
+
 def _user_message(req: DraftRequest) -> str:
     parts = [
         f"対象キーワード: {req.target_keyword}",
@@ -209,12 +250,7 @@ def generate_title_revision(
         tools=[_SUBMIT_TITLE_TOOL],
         tool_choice={"type": "auto"},
     )
-    try:
-        with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
-            msg = stream.get_final_message()
-    except TypeError:
-        with client.messages.stream(**kwargs) as stream:
-            msg = stream.get_final_message()
+    msg = _stream_final_message(client, kwargs)
 
     tool_use = next(
         (b for b in msg.content if getattr(b, "type", None) == "tool_use"
@@ -337,12 +373,7 @@ def filter_relevant_keywords(
         tools=[_FILTER_KEYWORDS_TOOL],
         tool_choice={"type": "auto"},
     )
-    try:
-        with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
-            msg = stream.get_final_message()
-    except TypeError:
-        with client.messages.stream(**kwargs) as stream:
-            msg = stream.get_final_message()
+    msg = _stream_final_message(client, kwargs)
 
     u = msg.usage
     in_tok = int(getattr(u, "input_tokens", 0) or 0)
@@ -459,12 +490,7 @@ def generate_seed_keywords(
         tools=[_SUBMIT_KEYWORD_IDEAS_TOOL],
         tool_choice={"type": "auto"},
     )
-    try:
-        with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
-            msg = stream.get_final_message()
-    except TypeError:
-        with client.messages.stream(**kwargs) as stream:
-            msg = stream.get_final_message()
+    msg = _stream_final_message(client, kwargs)
 
     u = msg.usage
     in_tok = int(getattr(u, "input_tokens", 0) or 0)
@@ -527,13 +553,7 @@ def generate_draft(
         # with clear instructions is reliably picked.
         tool_choice={"type": "auto"},
     )
-    try:
-        with client.messages.stream(thinking={"type": "adaptive"}, **kwargs) as stream:
-            msg = stream.get_final_message()
-    except TypeError:
-        # SDK too old for adaptive thinking kwarg — run without it.
-        with client.messages.stream(**kwargs) as stream:
-            msg = stream.get_final_message()
+    msg = _stream_final_message(client, kwargs)
 
     tool_use = next(
         (b for b in msg.content if getattr(b, "type", None) == "tool_use"

@@ -224,7 +224,7 @@ def _dispatch(s: Session, job: m.Job) -> dict:
                     "faked": res.faked,
                     "warnings": res.warnings,
                 })
-            except (PipelineError, BudgetExceeded) as exc:
+            except (PipelineError, BudgetExceeded, RuntimeError) as exc:
                 errors.append(f"{i + 1}件目: {exc}")
                 break
         job.llm_cost_usd = total_cost
