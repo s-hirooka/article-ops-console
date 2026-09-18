@@ -373,36 +373,53 @@ def _discover_llm_first(
     model = (acct.draft_model if acct else None) or "claude-sonnet-5"
     byok = resolve_byok_key(domain)
 
-    idea_result = generate_seed_keywords(
-        system=assembled.system, covered=covered_raw, count=20,
-        model=model, api_key=byok,
-    )
-    if not idea_result.faked:
-        budget.record_usage(
-            session, account_id=account_id, domain_id=domain_id, job_id=None,
-            model=idea_result.model, input_tokens=idea_result.input_tokens,
-            output_tokens=idea_result.output_tokens,
-            cache_read_tokens=idea_result.cache_read_tokens,
-            cache_write_tokens=idea_result.cache_write_tokens,
-            cost_usd=idea_result.cost_usd,
-        )
-
-    keywords = idea_result.keywords
+    # The brainstorm is stochastic — a given 30-keyword draw can, by chance,
+    # come back entirely below the volume threshold or cannibalizing
+    # existing content (confirmed in production: happened on both domains
+    # the same day). One retry, steering the second draw away from
+    # everything the first one already tried, before surfacing "no
+    # candidates" to the user.
+    all_keywords: list[str] = []
     metrics_rows: list = []
-    if keywords:
-        try:
-            metrics_rows = fetch_historical_metrics(keywords)
-        except Exception:
-            metrics_rows = []
+    candidates: list[dict] = []
+    below_threshold_excluded = broad_keyword_excluded = cannibalization_excluded = 0
+    covered_for_llm = list(covered_raw)
 
-    _record_api_usage(session, account_id, len(keywords))
-
-    candidates, below_threshold_excluded, broad_keyword_excluded, cannibalization_excluded = (
-        _classify_candidates(
-            metrics_rows, threshold=threshold, covered=covered, covered_keys=covered_keys,
-            wp_title_bigrams=wp_title_bigrams, limit=limit,
+    for _attempt in range(2):
+        idea_result = generate_seed_keywords(
+            system=assembled.system, covered=covered_for_llm, count=30,
+            model=model, api_key=byok,
         )
-    )
+        if not idea_result.faked:
+            budget.record_usage(
+                session, account_id=account_id, domain_id=domain_id, job_id=None,
+                model=idea_result.model, input_tokens=idea_result.input_tokens,
+                output_tokens=idea_result.output_tokens,
+                cache_read_tokens=idea_result.cache_read_tokens,
+                cache_write_tokens=idea_result.cache_write_tokens,
+                cost_usd=idea_result.cost_usd,
+            )
+
+        keywords = idea_result.keywords
+        all_keywords.extend(keywords)
+        covered_for_llm = covered_for_llm + keywords
+
+        if keywords:
+            try:
+                metrics_rows.extend(fetch_historical_metrics(keywords))
+            except Exception:
+                pass
+
+        _record_api_usage(session, account_id, len(keywords))
+
+        candidates, below_threshold_excluded, broad_keyword_excluded, cannibalization_excluded = (
+            _classify_candidates(
+                metrics_rows, threshold=threshold, covered=covered, covered_keys=covered_keys,
+                wp_title_bigrams=wp_title_bigrams, limit=limit,
+            )
+        )
+        if candidates:
+            break
 
     recommended_top = rank_top(candidates, limit=10)
 
@@ -410,8 +427,8 @@ def _discover_llm_first(
         "domain_id": domain_id,
         "mode": "llm_first",
         "seeds_used": [],
-        "llm_keywords_generated": len(keywords),
-        "llm_keywords": keywords,
+        "llm_keywords_generated": len(all_keywords),
+        "llm_keywords": all_keywords,
         "threshold": threshold,
         "ideas_returned": len(metrics_rows),
         "covered_keywords": len(covered),
